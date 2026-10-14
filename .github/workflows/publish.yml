@@ -1,0 +1,89 @@
+name: publish-catalog
+
+# catalog.sqlite is the source of truth on main. This workflow:
+#   1. bumps registry.sequence and exports reviewed-registry.json from the database
+#   2. signs it (ed25519) into reviewed-registry.signed.json
+#   3. commits the bumped catalog.sqlite back to main with [skip ci]
+#   4. force-pushes a prod branch that contains ONLY the two JSON files (CDN origin)
+#
+# Required repository secret: CATALOG_SIGNING_KEY (PKCS8 ed25519 PEM, raw or base64).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - catalog.sqlite
+  workflow_dispatch:
+    inputs:
+      bump_sequence:
+        description: Increment registry.sequence before export
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-catalog
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Export reviewed-registry.json
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.bump_sequence }}" != "true" ]; then
+            python3 catalog.py export
+          else
+            python3 catalog.py export --bump-sequence
+          fi
+
+      - name: Sign reviewed-registry.signed.json
+        env:
+          CATALOG_SIGNING_KEY: ${{ secrets.CATALOG_SIGNING_KEY }}
+        run: |
+          if [ -z "$CATALOG_SIGNING_KEY" ]; then
+            echo "::error::repository secret CATALOG_SIGNING_KEY is not set"
+            exit 1
+          fi
+          KEY_FILE="$RUNNER_TEMP/catalog-signing-key.pem"
+          if [[ "$CATALOG_SIGNING_KEY" == -----BEGIN* ]]; then
+            printf '%s\n' "$CATALOG_SIGNING_KEY" > "$KEY_FILE"
+          else
+            printf '%s' "$CATALOG_SIGNING_KEY" | base64 --decode > "$KEY_FILE"
+          fi
+          chmod 600 "$KEY_FILE"
+          python3 catalog.py sign --key "$KEY_FILE"
+          rm -f "$KEY_FILE"
+
+      - name: Commit sequence bump back to main
+        run: |
+          if git diff --quiet -- catalog.sqlite; then
+            echo "catalog.sqlite unchanged (sequence not bumped)"
+          else
+            git add catalog.sqlite
+            git commit -m "chore: bump registry sequence [skip ci]"
+            git push origin HEAD:main
+          fi
+
+      - name: Publish the two files to the prod branch
+        run: |
+          SEQUENCE=$(python3 -c "import json; print(json.load(open('reviewed-registry.json'))['sequence'])")
+          BLOB_JSON=$(git hash-object -w reviewed-registry.json)
+          BLOB_SIGNED=$(git hash-object -w reviewed-registry.signed.json)
+          TREE=$(printf '100644 blob %s\treviewed-registry.json\n100644 blob %s\treviewed-registry.signed.json\n' "$BLOB_JSON" "$BLOB_SIGNED" | git mktree)
+          COMMIT=$(git commit-tree "$TREE" -m "publish reviewed registry (sequence $SEQUENCE)")
+          git push --force origin "$COMMIT:refs/heads/prod"
+          echo "published sequence $SEQUENCE to prod ($COMMIT)"

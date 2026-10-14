@@ -1,0 +1,17 @@
+# private signing key and local-only config — never commit
+catalog.pem
+env
+
+# artifacts generated from catalog.sqlite; they only ever live on the prod branch
+reviewed-registry.json
+reviewed-registry.signed.json
+
+# IDE
+.idea/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.mypy_cache/
+.venv
