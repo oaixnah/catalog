@@ -32,7 +32,7 @@ catalog.sqlite → catalog.py export → reviewed-registry.json → catalog.py s
   - signed：2 空格缩进、**无**末尾换行。
   - `payload` = JSON 原始字节的标准 base64（去 `=`）；`signature` = 对 payload 解码后字节的 ed25519 签名，base64url（去 `=`）。ed25519 确定性：同 payload + 同私钥必得同一 signature。
 - 导出格式 v2：顶层 `formatVersion` = 2；`models` 段仍为 reviewed-models-v1（`schemaVersion` = 1）；`providers` 段为 reviewed-providers-v2（`schemaVersion` = 2，provider 含 `modelList: {path, authentication}`，协议下沉到每个 `models[]` 条目的 `protocol`）。
-- 签名信封 `formatVersion` 由 `SIGNED_FORMAT_VERSION` 控制，当前与 registry 同步为 2；信封结构未变，如需脱钩可单独调整该常量。
+- 签名信封 `formatVersion` 独立于 registry，固定为 1（`SIGNED_FORMAT_VERSION`），不受 registry 格式升级影响。
 - 枚举：efforts = none/low/medium/high/xhigh/max；authentication = bearer-api-key/x-api-key；protocol = openai-responses/anthropic-messages/openai-compatible（protocol 存在 `provider_model` 行上，`link bind` 时必填）。
 - `provider_model.model_ref` 必须存在于 model 表（外键；`model rm` 会级联删除 reasoning efforts 与 provider 关联）。
 - schema 变更必须同步 `catalog.py` 的 `SCHEMA_SQL`、导出逻辑与 `CATALOG_GUIDE.md`。

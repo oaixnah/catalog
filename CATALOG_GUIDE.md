@@ -147,7 +147,7 @@ cmp reviewed-registry.signed.json <(git show prod:reviewed-registry.signed.json)
 
 ```jsonc
 {
-  "formatVersion": 2,
+  "formatVersion": 1,
   "algorithm": "ed25519",
   "keyId": "ravel-public-ed25519",
   "signature": "<base64url 无填充，64 字节 ed25519 签名>",
@@ -155,7 +155,7 @@ cmp reviewed-registry.signed.json <(git show prod:reviewed-registry.signed.json)
 }
 ```
 
-- 信封的 `formatVersion` = `SIGNED_FORMAT_VERSION`，当前与 registry 同步为 2（信封结构未变，可单独调整脱钩）。
+- 信封的 `formatVersion` 独立于 registry 的 `formatVersion`（信封固定 1 = `SIGNED_FORMAT_VERSION`，registry 当前为 2）。
 - `payload` 解码后必须与 `reviewed-registry.json` **逐字节一致**。
 - 签名的消息是 `payload` 解码后的字节（即 JSON 原始字节）。
 - ed25519 是确定性签名：同一 payload + 同一私钥必须产生相同 `signature`。
