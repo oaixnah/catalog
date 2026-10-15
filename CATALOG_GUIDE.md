@@ -151,11 +151,12 @@ cmp reviewed-registry.signed.json <(git show prod:reviewed-registry.signed.json)
   "algorithm": "ed25519",
   "keyId": "ravel-public-ed25519",
   "signature": "<base64url 无填充，64 字节 ed25519 签名>",
-  "payload": "<标准 base64 无填充，内容为 reviewed-registry.json 的原始字节>"
+  "payload": "<base64url 无填充，内容为 reviewed-registry.json 的原始字节>"
 }
 ```
 
 - 信封的 `formatVersion` 独立于 registry 的 `formatVersion`（信封固定 1 = `SIGNED_FORMAT_VERSION`，registry 当前为 2）。
+- `payload` 与 `signature` 均为无填充 base64url：客户端用 URL-safe 解码，且要求 `urlsafe_encode(decoded) == value`，不得出现 `+` / `/` / `=`。
 - `payload` 解码后必须与 `reviewed-registry.json` **逐字节一致**。
 - 签名的消息是 `payload` 解码后的字节（即 JSON 原始字节）。
 - ed25519 是确定性签名：同一 payload + 同一私钥必须产生相同 `signature`。

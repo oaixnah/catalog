@@ -674,12 +674,16 @@ def cmd_sign(args):
     if len(signature) != 64:
         die(f"unexpected signature length {len(signature)} (expected 64 bytes)")
 
+    payload_field = base64.urlsafe_b64encode(payload_bytes).decode().rstrip("=")
+    if re.fullmatch(r"[A-Za-z0-9_-]+", payload_field) is None:
+        die("payload is not canonical unpadded base64url (URL-safe alphabet, no padding)")
+
     signed = {
         "formatVersion": SIGNED_FORMAT_VERSION,
         "algorithm": "ed25519",
         "keyId": args.key_id,
         "signature": base64.urlsafe_b64encode(signature).decode().rstrip("="),
-        "payload": base64.b64encode(payload_bytes).decode().rstrip("="),
+        "payload": payload_field,
     }
     write_text(args.out, json.dumps(signed, indent=2, ensure_ascii=False))
     print(f"signed {args.infile} -> {args.out} (keyId={args.key_id})")
