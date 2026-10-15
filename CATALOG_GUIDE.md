@@ -40,13 +40,13 @@ python3 catalog.py model rm <id>
 
 python3 catalog.py provider list
 python3 catalog.py provider add --id groq --name Groq --authentication bearer-api-key \
-    --base-url https://api.groq.com/openai --model-list-path /v1/models \
-    --protocol openai-compatible --request-path /v1/chat/completions
+    --base-url https://api.groq.com/openai --model-list-path /v1/models
 python3 catalog.py provider set <id> --base-url https://api.example.com
 python3 catalog.py provider rm <id>
 
 python3 catalog.py link list
-python3 catalog.py link bind <provider> <model_ref> [--api-model-id <api_model_id>]
+python3 catalog.py link bind <provider> <model_ref> [--api-model-id <api_model_id>] \
+    --protocol openai-compatible --request-path /v1/chat/completions
 python3 catalog.py link unbind <provider> <model_id>
 
 python3 catalog.py registry show          # format_version / sequence / created_at
@@ -98,8 +98,6 @@ provider                          -- 提供商
 | `authentication` | TEXT | `bearer-api-key` / `x-api-key` |
 | `base_url` | TEXT | API 基础 URL |
 | `model_list_path` | TEXT | 模型列表路径 |
-| `protocol_type` | TEXT | `openai-responses` / `anthropic-messages` / `openai-compatible` |
-| `request_path` | TEXT | 请求端点路径 |
 
 #### `provider_model`
 
@@ -108,8 +106,20 @@ provider                          -- 提供商
 | `provider_id` | TEXT FK | 关联 provider.id |
 | `model_id` | TEXT | API 调用时使用的模型 ID |
 | `model_ref` | TEXT FK | 关联 model.id（必须已存在） |
+| `protocol_type` | TEXT | `openai-responses` / `anthropic-messages` / `openai-compatible` |
+| `request_path` | TEXT | 请求端点路径 |
+
+协议属于「provider ↔ model 链接」而非 provider，同一 provider 的不同模型可以用不同协议。
 
 导出顺序：model / provider / provider_model 一律按插入顺序（`rowid`）。
+
+## 导出结构（reviewed-registry.json v2）
+
+- 顶层：`formatVersion`（当前 2）、`sequence`、`models`、`providers`。
+- `models` 段：`reviewed-models-v1` schema（`schemaVersion` = 1），本次 v2 未改动。
+- `providers` 段：`reviewed-providers-v2` schema（`schemaVersion` = 2）：
+  - provider：`{id, displayName, baseUrl, modelList: {path, authentication}, models}`。
+  - `models[]` 条目：`{modelId, modelRef, protocol: {type, requestPath}}`（v1 中协议在 provider 级，v2 下沉到每个链接）。
 
 ## 本地构建（不发布）
 
@@ -145,6 +155,7 @@ cmp reviewed-registry.signed.json <(git show prod:reviewed-registry.signed.json)
 }
 ```
 
+- 信封的 `formatVersion` 独立于 registry 的 `formatVersion`（信封固定 1 = `SIGNED_FORMAT_VERSION`，registry 当前为 2）。
 - `payload` 解码后必须与 `reviewed-registry.json` **逐字节一致**。
 - 签名的消息是 `payload` 解码后的字节（即 JSON 原始字节）。
 - ed25519 是确定性签名：同一 payload + 同一私钥必须产生相同 `signature`。

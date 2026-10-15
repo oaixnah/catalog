@@ -30,10 +30,12 @@ DEFAULT_SIGNED = os.path.join(SCRIPT_DIR, "reviewed-registry.signed.json")
 DEFAULT_KEY = os.path.join(SCRIPT_DIR, "catalog.pem")
 
 DEFAULT_KEY_ID = "ravel-public-ed25519"
-FORMAT_VERSION = 1
-SCHEMA_VERSION = 1
+FORMAT_VERSION = 2
+SIGNED_FORMAT_VERSION = 1
+MODELS_SCHEMA_VERSION = 1
+PROVIDERS_SCHEMA_VERSION = 2
 MODELS_SCHEMA = "./reviewed-models-v1.schema.json"
-PROVIDERS_SCHEMA = "./reviewed-providers-v1.schema.json"
+PROVIDERS_SCHEMA = "./reviewed-providers-v2.schema.json"
 
 EFFORTS = ("none", "low", "medium", "high", "xhigh", "max")
 AUTHENTICATIONS = ("bearer-api-key", "x-api-key")
@@ -71,15 +73,15 @@ CREATE TABLE IF NOT EXISTS provider (
     display_name    TEXT NOT NULL,
     authentication  TEXT NOT NULL,
     base_url        TEXT NOT NULL,
-    model_list_path TEXT NOT NULL,
-    protocol_type   TEXT NOT NULL,
-    request_path    TEXT NOT NULL
+    model_list_path TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS provider_model (
-    provider_id TEXT NOT NULL,
-    model_id    TEXT NOT NULL,
-    model_ref   TEXT NOT NULL,
+    provider_id   TEXT NOT NULL,
+    model_id      TEXT NOT NULL,
+    model_ref     TEXT NOT NULL,
+    protocol_type TEXT NOT NULL,
+    request_path  TEXT NOT NULL,
     PRIMARY KEY (provider_id, model_id),
     FOREIGN KEY (provider_id) REFERENCES provider(id) ON DELETE CASCADE,
     FOREIGN KEY (model_ref)   REFERENCES model(id)    ON DELETE CASCADE
@@ -170,14 +172,18 @@ def collect_problems(conn):
     for row in conn.execute("SELECT model_id, effort FROM model_reasoning_effort"):
         if row["effort"] not in EFFORTS:
             problems.append(f"model '{row['model_id']}': invalid effort '{row['effort']}'")
-    for row in conn.execute("SELECT id, authentication, protocol_type FROM provider"):
+    for row in conn.execute("SELECT id, authentication FROM provider"):
         if row["authentication"] not in AUTHENTICATIONS:
             problems.append(f"provider '{row['id']}': invalid authentication '{row['authentication']}'")
-        if row["protocol_type"] not in PROTOCOLS:
-            problems.append(f"provider '{row['id']}': invalid protocol_type '{row['protocol_type']}'")
-    for row in conn.execute("SELECT provider_id, model_id FROM provider_model"):
+    for row in conn.execute("SELECT provider_id, model_id, protocol_type, request_path FROM provider_model"):
         if not row["model_id"].strip():
             problems.append(f"provider '{row['provider_id']}': empty provider_model.model_id")
+        if row["protocol_type"] not in PROTOCOLS:
+            problems.append(
+                f"link '{row['provider_id']}' -> '{row['model_id']}': invalid protocol_type '{row['protocol_type']}'"
+            )
+        if not row["request_path"].strip():
+            problems.append(f"link '{row['provider_id']}' -> '{row['model_id']}': empty request_path")
     return problems
 
 
@@ -219,7 +225,14 @@ def build_document(conn):
     providers = []
     for provider in conn.execute("SELECT * FROM provider ORDER BY rowid"):
         provider_models = [
-            {"modelId": row["model_id"], "modelRef": row["model_ref"]}
+            {
+                "modelId": row["model_id"],
+                "modelRef": row["model_ref"],
+                "protocol": {
+                    "type": row["protocol_type"],
+                    "requestPath": row["request_path"],
+                },
+            }
             for row in conn.execute(
                 "SELECT * FROM provider_model WHERE provider_id = ? ORDER BY rowid",
                 (provider["id"],),
@@ -229,12 +242,10 @@ def build_document(conn):
             {
                 "id": provider["id"],
                 "displayName": provider["display_name"],
-                "authentication": provider["authentication"],
                 "baseUrl": provider["base_url"],
-                "modelListPath": provider["model_list_path"],
-                "protocol": {
-                    "type": provider["protocol_type"],
-                    "requestPath": provider["request_path"],
+                "modelList": {
+                    "path": provider["model_list_path"],
+                    "authentication": provider["authentication"],
                 },
                 "models": provider_models,
             }
@@ -245,12 +256,12 @@ def build_document(conn):
         "sequence": registry["sequence"],
         "models": {
             "$schema": MODELS_SCHEMA,
-            "schemaVersion": SCHEMA_VERSION,
+            "schemaVersion": MODELS_SCHEMA_VERSION,
             "models": models,
         },
         "providers": {
             "$schema": PROVIDERS_SCHEMA,
-            "schemaVersion": SCHEMA_VERSION,
+            "schemaVersion": PROVIDERS_SCHEMA_VERSION,
             "providers": providers,
         },
     }
@@ -415,7 +426,7 @@ def cmd_provider_list(args):
     if not rows:
         print("(no providers)")
         return
-    headers = ("id", "display_name", "authentication", "protocol_type", "base_url", "request_path", "models")
+    headers = ("id", "display_name", "authentication", "base_url", "model_list_path", "models")
     table = []
     for provider in rows:
         model_ids = [
@@ -430,9 +441,8 @@ def cmd_provider_list(args):
                 provider["id"],
                 provider["display_name"],
                 provider["authentication"],
-                provider["protocol_type"],
                 provider["base_url"],
-                provider["request_path"],
+                provider["model_list_path"],
                 ",".join(model_ids),
             )
         )
@@ -452,28 +462,23 @@ def cmd_provider_show(args):
     print(f"authentication:  {provider['authentication']}")
     print(f"base_url:        {provider['base_url']}")
     print(f"model_list_path: {provider['model_list_path']}")
-    print(f"protocol_type:   {provider['protocol_type']}")
-    print(f"request_path:    {provider['request_path']}")
     print("models:")
     for row in conn.execute(
-        "SELECT model_id, model_ref FROM provider_model WHERE provider_id = ? ORDER BY rowid",
+        "SELECT model_id, model_ref, protocol_type, request_path FROM provider_model WHERE provider_id = ? ORDER BY rowid",
         (args.id,),
     ):
-        print(f"  - {row['model_id']} (ref: {row['model_ref']})")
+        print(f"  - {row['model_id']} (ref: {row['model_ref']}, {row['protocol_type']} {row['request_path']})")
 
 
 def cmd_provider_add(args):
     if args.authentication not in AUTHENTICATIONS:
         die(f"invalid authentication '{args.authentication}' (choose from: {', '.join(AUTHENTICATIONS)})")
-    if args.protocol not in PROTOCOLS:
-        die(f"invalid protocol '{args.protocol}' (choose from: {', '.join(PROTOCOLS)})")
     conn = connect(args.db)
     try:
         conn.execute(
-            """INSERT INTO provider (id, display_name, authentication, base_url,
-                                     model_list_path, protocol_type, request_path)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (args.id, args.name, args.authentication, args.base_url, args.model_list_path, args.protocol, args.request_path),
+            """INSERT INTO provider (id, display_name, authentication, base_url, model_list_path)
+               VALUES (?, ?, ?, ?, ?)""",
+            (args.id, args.name, args.authentication, args.base_url, args.model_list_path),
         )
         conn.commit()
     except sqlite3.IntegrityError as error:
@@ -484,8 +489,6 @@ def cmd_provider_add(args):
 def cmd_provider_set(args):
     if args.authentication is not None and args.authentication not in AUTHENTICATIONS:
         die(f"invalid authentication '{args.authentication}' (choose from: {', '.join(AUTHENTICATIONS)})")
-    if args.protocol is not None and args.protocol not in PROTOCOLS:
-        die(f"invalid protocol '{args.protocol}' (choose from: {', '.join(PROTOCOLS)})")
     conn = connect(args.db)
     if conn.execute("SELECT 1 FROM provider WHERE id = ?", (args.id,)).fetchone() is None:
         die(f"provider '{args.id}' not found")
@@ -496,8 +499,6 @@ def cmd_provider_set(args):
         ("authentication", "authentication"),
         ("base_url", "base_url"),
         ("model_list_path", "model_list_path"),
-        ("protocol", "protocol_type"),
-        ("request_path", "request_path"),
     ):
         value = getattr(args, field)
         if value is not None:
@@ -531,10 +532,12 @@ def cmd_link_list(args):
         print("(no links)")
         return
     for row in rows:
-        print(f"{row['provider_id']}  {row['model_id']}  (ref: {row['model_ref']})")
+        print(f"{row['provider_id']}  {row['model_id']}  (ref: {row['model_ref']}, {row['protocol_type']} {row['request_path']})")
 
 
 def cmd_link_bind(args):
+    if args.protocol not in PROTOCOLS:
+        die(f"invalid protocol '{args.protocol}' (choose from: {', '.join(PROTOCOLS)})")
     conn = connect(args.db)
     api_model_id = args.api_model_id or args.model_ref
     if conn.execute("SELECT 1 FROM provider WHERE id = ?", (args.provider,)).fetchone() is None:
@@ -543,13 +546,13 @@ def cmd_link_bind(args):
         die(f"model '{args.model_ref}' not found (model_ref must exist in model table)")
     try:
         conn.execute(
-            "INSERT INTO provider_model (provider_id, model_id, model_ref) VALUES (?, ?, ?)",
-            (args.provider, api_model_id, args.model_ref),
+            "INSERT INTO provider_model (provider_id, model_id, model_ref, protocol_type, request_path) VALUES (?, ?, ?, ?, ?)",
+            (args.provider, api_model_id, args.model_ref, args.protocol, args.request_path),
         )
         conn.commit()
     except sqlite3.IntegrityError as error:
         die(f"cannot bind: {error}")
-    print(f"bound {args.provider} -> {api_model_id} (ref: {args.model_ref})")
+    print(f"bound {args.provider} -> {api_model_id} (ref: {args.model_ref}, {args.protocol} {args.request_path})")
 
 
 def cmd_link_unbind(args):
@@ -672,7 +675,7 @@ def cmd_sign(args):
         die(f"unexpected signature length {len(signature)} (expected 64 bytes)")
 
     signed = {
-        "formatVersion": FORMAT_VERSION,
+        "formatVersion": SIGNED_FORMAT_VERSION,
         "algorithm": "ed25519",
         "keyId": args.key_id,
         "signature": base64.urlsafe_b64encode(signature).decode().rstrip("="),
@@ -757,8 +760,6 @@ def build_parser():
     provider_add.add_argument("--authentication", required=True, choices=AUTHENTICATIONS)
     provider_add.add_argument("--base-url", required=True)
     provider_add.add_argument("--model-list-path", required=True)
-    provider_add.add_argument("--protocol", required=True, choices=PROTOCOLS)
-    provider_add.add_argument("--request-path", required=True)
     provider_add.set_defaults(func=cmd_provider_add)
 
     provider_set = provider_sub.add_parser("set", help="update a provider")
@@ -767,8 +768,6 @@ def build_parser():
     provider_set.add_argument("--authentication", choices=AUTHENTICATIONS)
     provider_set.add_argument("--base-url")
     provider_set.add_argument("--model-list-path")
-    provider_set.add_argument("--protocol", choices=PROTOCOLS)
-    provider_set.add_argument("--request-path")
     provider_set.set_defaults(func=cmd_provider_set)
 
     provider_rm = provider_sub.add_parser("rm", help="delete a provider (cascades links)")
@@ -786,6 +785,8 @@ def build_parser():
     link_bind.add_argument("provider")
     link_bind.add_argument("model_ref", help="model.id from the model table")
     link_bind.add_argument("--api-model-id", help="model id used in API calls (default: model_ref)")
+    link_bind.add_argument("--protocol", required=True, choices=PROTOCOLS)
+    link_bind.add_argument("--request-path", required=True)
     link_bind.set_defaults(func=cmd_link_bind)
 
     link_unbind = link_sub.add_parser("unbind", help="remove a provider<->model link")
