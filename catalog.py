@@ -708,7 +708,7 @@ def cmd_tui(args):
     if missing:
         die(f"database is not initialized (missing tables: {', '.join(missing)}); run 'catalog.py init' first")
     try:
-        from catalog_tui import run_tui
+        from tui import run_tui
 
         run_tui(args.db, args.view)
     except ImportError as error:

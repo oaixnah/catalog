@@ -35,7 +35,7 @@ catalog.sqlite → catalog.py export → reviewed-registry.json → catalog.py s
   - signed：2 空格缩进、**无**末尾换行。
   - `payload` = JSON 原始字节的 base64url（去 `=`，无填充）；`signature` = 对 payload 解码后字节的 ed25519 签名，base64url（去 `=`）。ed25519 确定性：同 payload + 同私钥必得同一 signature。
 - 导出格式 v2：顶层 `formatVersion` = 2；`models` 段仍为 reviewed-models-v1（`schemaVersion` = 1）；`providers` 段为 reviewed-providers-v2（`schemaVersion` = 2，provider 含 `modelList: {path, authentication}`，协议下沉到每个 `models[]` 条目的 `protocol`）。
-- TUI 的字母排序只用于显示：`catalog_tui/data.py` 可以排序，`build_document()` 必须继续按 `rowid` 导出，不要复用 TUI 的排序逻辑。
+- TUI 的字母排序只用于显示：`tui/data.py` 可以排序，`build_document()` 必须继续按 `rowid` 导出，不要复用 TUI 的排序逻辑。
 - TUI 直接写 `catalog.sqlite`，不会自动 export / sign / bump sequence；不要把它接进发布链路。
 - 修改 Link 的 `model_id` 用 `UPDATE` 保留 rowid；新增记录才会追加 rowid。TUI 已按此实现，改动时不要退化成 delete+insert。
 - 签名信封 `formatVersion` 独立于 registry，固定为 1（`SIGNED_FORMAT_VERSION`），不受 registry 格式升级影响。

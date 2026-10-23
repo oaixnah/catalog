@@ -18,7 +18,7 @@ catalog-cli = "catalog:main"
 
 [tool.setuptools]
 py-modules = ["catalog"]
-packages = ["catalog_tui"]
+packages = ["tui"]
 
 [tool.setuptools.package-data]
-catalog_tui = ["styles.tcss"]
+tui = ["styles.tcss"]

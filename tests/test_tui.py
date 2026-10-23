@@ -5,9 +5,9 @@ import tempfile
 import unittest
 import catalog
 
-from catalog_tui import data
-from catalog_tui.app import CatalogApp, MainScreen
-from catalog_tui.screens import (
+from tui import data
+from tui.app import CatalogApp, MainScreen
+from tui.screens import (
     BindScreen,
     ConfirmScreen,
     LinkFormScreen,
@@ -16,7 +16,7 @@ from catalog_tui.screens import (
     RelatedBindScreen,
     RelatedScreen,
 )
-from catalog_tui.widgets import ActionBar, CatalogTable
+from tui.widgets import ActionBar, CatalogTable
 from textual.widgets import Checkbox, Input, Select, Static
 
 
