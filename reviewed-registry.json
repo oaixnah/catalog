@@ -1,0 +1,372 @@
+{
+    "formatVersion": 2,
+    "sequence": 10,
+    "models": {
+        "$schema": "./reviewed-models-v1.schema.json",
+        "schemaVersion": 1,
+        "models": [
+            {
+                "id": "gpt-5.6-sol",
+                "displayName": "GPT-5.6 Sol",
+                "limits": {
+                    "context": 1050000,
+                    "input": 922000,
+                    "output": 128000
+                },
+                "capabilities": {
+                    "toolCalling": true,
+                    "structuredOutput": true,
+                    "temperature": false,
+                    "reasoningEfforts": [
+                        "none",
+                        "low",
+                        "medium",
+                        "high",
+                        "xhigh",
+                        "max"
+                    ]
+                }
+            },
+            {
+                "id": "gpt-5.6-terra",
+                "displayName": "GPT-5.6 Terra",
+                "limits": {
+                    "context": 1050000,
+                    "input": 922000,
+                    "output": 128000
+                },
+                "capabilities": {
+                    "toolCalling": true,
+                    "structuredOutput": true,
+                    "temperature": false,
+                    "reasoningEfforts": [
+                        "none",
+                        "low",
+                        "medium",
+                        "high",
+                        "xhigh",
+                        "max"
+                    ]
+                }
+            },
+            {
+                "id": "gpt-5.6-luna",
+                "displayName": "GPT-5.6 Luna",
+                "limits": {
+                    "context": 1050000,
+                    "input": 922000,
+                    "output": 128000
+                },
+                "capabilities": {
+                    "toolCalling": true,
+                    "structuredOutput": true,
+                    "temperature": false,
+                    "reasoningEfforts": [
+                        "none",
+                        "low",
+                        "medium",
+                        "high",
+                        "xhigh",
+                        "max"
+                    ]
+                }
+            },
+            {
+                "id": "claude-opus-5",
+                "displayName": "Claude Opus 5",
+                "limits": {
+                    "context": 1000000,
+                    "input": null,
+                    "output": 128000
+                },
+                "capabilities": {
+                    "toolCalling": true,
+                    "structuredOutput": true,
+                    "temperature": false,
+                    "reasoningEfforts": [
+                        "low",
+                        "medium",
+                        "high",
+                        "xhigh",
+                        "max"
+                    ]
+                }
+            },
+            {
+                "id": "claude-sonnet-5",
+                "displayName": "Claude Sonnet 5",
+                "limits": {
+                    "context": 1000000,
+                    "input": null,
+                    "output": 128000
+                },
+                "capabilities": {
+                    "toolCalling": true,
+                    "structuredOutput": true,
+                    "temperature": false,
+                    "reasoningEfforts": [
+                        "low",
+                        "medium",
+                        "high",
+                        "xhigh",
+                        "max"
+                    ]
+                }
+            },
+            {
+                "id": "deepseek-flash",
+                "displayName": "DeepSeek Flash",
+                "limits": {
+                    "context": 1000000,
+                    "input": null,
+                    "output": 384000
+                },
+                "capabilities": {
+                    "toolCalling": true,
+                    "structuredOutput": true,
+                    "temperature": false,
+                    "reasoningEfforts": [
+                        "none",
+                        "low",
+                        "high",
+                        "max"
+                    ]
+                }
+            },
+            {
+                "id": "glm-5.3-flash",
+                "displayName": "GLM-5.3-Flash",
+                "limits": {
+                    "context": 1024000,
+                    "input": null,
+                    "output": 128000
+                },
+                "capabilities": {
+                    "toolCalling": true,
+                    "structuredOutput": true,
+                    "temperature": false,
+                    "reasoningEfforts": [
+                        "none",
+                        "low",
+                        "high",
+                        "max"
+                    ]
+                }
+            },
+            {
+                "id": "kimi-k3",
+                "displayName": "Kimi K3",
+                "limits": {
+                    "context": 1000000,
+                    "input": null,
+                    "output": 384000
+                },
+                "capabilities": {
+                    "toolCalling": true,
+                    "structuredOutput": true,
+                    "temperature": false,
+                    "reasoningEfforts": [
+                        "low",
+                        "high",
+                        "max"
+                    ]
+                }
+            },
+            {
+                "id": "deepseek/deepseek-flash",
+                "displayName": "DeepSeek-V4.1-Flash 原厂直供",
+                "limits": {
+                    "context": 1000000,
+                    "input": null,
+                    "output": 384000
+                },
+                "capabilities": {
+                    "toolCalling": true,
+                    "structuredOutput": true,
+                    "temperature": false,
+                    "reasoningEfforts": [
+                        "low",
+                        "high",
+                        "max"
+                    ]
+                }
+            },
+            {
+                "id": "deepseek-v4-flash",
+                "displayName": "DeepSeek-V4-Flash",
+                "limits": {
+                    "context": 1000000,
+                    "input": null,
+                    "output": 384000
+                },
+                "capabilities": {
+                    "toolCalling": true,
+                    "structuredOutput": true,
+                    "temperature": false,
+                    "reasoningEfforts": [
+                        "low",
+                        "high",
+                        "max"
+                    ]
+                }
+            }
+        ]
+    },
+    "providers": {
+        "$schema": "./reviewed-providers-v2.schema.json",
+        "schemaVersion": 2,
+        "providers": [
+            {
+                "id": "openai",
+                "displayName": "OpenAI",
+                "baseUrl": "https://api.openai.com",
+                "modelList": {
+                    "path": "/v1/models",
+                    "authentication": "bearer-api-key"
+                },
+                "models": [
+                    {
+                        "modelId": "gpt-5.6-sol",
+                        "modelRef": "gpt-5.6-sol",
+                        "protocol": {
+                            "type": "openai-responses",
+                            "requestPath": "/v1/responses"
+                        }
+                    },
+                    {
+                        "modelId": "gpt-5.6-terra",
+                        "modelRef": "gpt-5.6-terra",
+                        "protocol": {
+                            "type": "openai-responses",
+                            "requestPath": "/v1/responses"
+                        }
+                    },
+                    {
+                        "modelId": "gpt-5.6-luna",
+                        "modelRef": "gpt-5.6-luna",
+                        "protocol": {
+                            "type": "openai-responses",
+                            "requestPath": "/v1/responses"
+                        }
+                    }
+                ]
+            },
+            {
+                "id": "anthropic",
+                "displayName": "Anthropic",
+                "baseUrl": "https://api.anthropic.com",
+                "modelList": {
+                    "path": "/v1/models",
+                    "authentication": "x-api-key"
+                },
+                "models": [
+                    {
+                        "modelId": "claude-opus-5",
+                        "modelRef": "claude-opus-5",
+                        "protocol": {
+                            "type": "anthropic-messages",
+                            "requestPath": "/v1/messages"
+                        }
+                    },
+                    {
+                        "modelId": "claude-sonnet-5",
+                        "modelRef": "claude-sonnet-5",
+                        "protocol": {
+                            "type": "anthropic-messages",
+                            "requestPath": "/v1/messages"
+                        }
+                    }
+                ]
+            },
+            {
+                "id": "deepseek",
+                "displayName": "DeepSeek",
+                "baseUrl": "https://api.deepseek.com",
+                "modelList": {
+                    "path": "/models",
+                    "authentication": "bearer-api-key"
+                },
+                "models": [
+                    {
+                        "modelId": "deepseek-flash",
+                        "modelRef": "deepseek-flash",
+                        "protocol": {
+                            "type": "openai-compatible",
+                            "requestPath": "/chat/completions"
+                        }
+                    }
+                ]
+            },
+            {
+                "id": "tencent-tokenhub",
+                "displayName": "Tencent TokenHub",
+                "baseUrl": "https://tokenhub.tencentmaas.com",
+                "modelList": {
+                    "path": "/v1/models",
+                    "authentication": "bearer-api-key"
+                },
+                "models": [
+                    {
+                        "modelId": "deepseek-flash",
+                        "modelRef": "deepseek-flash",
+                        "protocol": {
+                            "type": "openai-compatible",
+                            "requestPath": "/v1/chat/completions"
+                        }
+                    },
+                    {
+                        "modelId": "glm-5.3-flash",
+                        "modelRef": "glm-5.3-flash",
+                        "protocol": {
+                            "type": "openai-compatible",
+                            "requestPath": "/v1/chat/completions"
+                        }
+                    },
+                    {
+                        "modelId": "kimi-k3",
+                        "modelRef": "kimi-k3",
+                        "protocol": {
+                            "type": "openai-compatible",
+                            "requestPath": "/chat/completions"
+                        }
+                    },
+                    {
+                        "modelId": "deepseek/deepseek-flash",
+                        "modelRef": "deepseek/deepseek-flash",
+                        "protocol": {
+                            "type": "openai-responses",
+                            "requestPath": "/responses"
+                        }
+                    },
+                    {
+                        "modelId": "deepseek-v4-flash",
+                        "modelRef": "deepseek-v4-flash",
+                        "protocol": {
+                            "type": "openai-responses",
+                            "requestPath": "/responses"
+                        }
+                    }
+                ]
+            },
+            {
+                "id": "moonshotai-cn",
+                "displayName": "Moonshot AI (Chinese Mainland)",
+                "baseUrl": "https://api.moonshot.cn/v1",
+                "modelList": {
+                    "path": "/models",
+                    "authentication": "bearer-api-key"
+                },
+                "models": [
+                    {
+                        "modelId": "kimi-k3",
+                        "modelRef": "kimi-k3",
+                        "protocol": {
+                            "type": "openai-responses",
+                            "requestPath": "/responses"
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+}
