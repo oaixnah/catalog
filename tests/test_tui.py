@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 import tempfile
 import unittest
+from unittest import mock
+
 import catalog
 
 from tui import data
@@ -178,10 +180,12 @@ class DataTests(unittest.TestCase):
             authentication="bearer-api-key",
             base_url="https://new.example",
             model_list_path="/v1/models",
+            logo_source="https://logos.example/{provider}.svg",
         )
         provider = data.fetch_provider(self.conn, "new-provider")
         assert provider is not None
         self.assertEqual(provider.display_name, "New Provider")
+        self.assertEqual(provider.logo_source, "https://logos.example/{provider}.svg")
         data.update_provider(
             self.conn,
             provider_id="new-provider",
@@ -189,10 +193,12 @@ class DataTests(unittest.TestCase):
             authentication="x-api-key",
             base_url="https://renamed.example",
             model_list_path="/models",
+            logo_source="./assets/{provider}.svg",
         )
         provider = data.fetch_provider(self.conn, "new-provider")
         assert provider is not None
         self.assertEqual(provider.authentication, "x-api-key")
+        self.assertEqual(provider.logo_source, "./assets/{provider}.svg")
         deleted, links = data.delete_providers(self.conn, ["new-provider"])
         self.assertEqual((deleted, links), (1, 0))
 
@@ -506,16 +512,64 @@ class UiTests(unittest.IsolatedAsyncioTestCase):
             form.query_one("#provider-name", Input).value = "Added Provider"
             form.query_one("#provider-base-url", Input).value = "https://added.example"
             form.query_one("#provider-list-path", Input).value = "/v1/models"
+            self.assertEqual(form.query_one("#provider-logo-kind", Select).value, "default")
+            self.assertTrue(form.query_one("#provider-logo-value", Input).disabled)
+            await pilot.pause()
+            with mock.patch("catalog.sync_provider_logo"):
+                await pilot.press("ctrl+s")
+            await pilot.pause()
+            conn = catalog.connect(self.db_path)
+            try:
+                row = conn.execute(
+                    "SELECT logo_source FROM provider WHERE id = 'added-provider'"
+                ).fetchone()
+                self.assertIsNotNone(row)
+                self.assertEqual(row["logo_source"], "default")
+            finally:
+                conn.close()
+
+    async def test_provider_logo_local_file(self) -> None:
+        svg_path = os.path.join(self.temp.name, "source.svg")
+        with open(svg_path, "w", encoding="utf-8") as handle:
+            handle.write('<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0"/></svg>')
+        self.app = CatalogApp(self.db_path)
+        async with self.app.run_test(size=(140, 45)) as pilot:
+            await pilot.pause()
+            await pilot.press("2")
+            await pilot.pause()
+            await pilot.press("n")
+            form = await self.wait_for_screen(pilot, ProviderFormScreen)
+            form.query_one("#provider-id", Input).value = "local-logo"
+            form.query_one("#provider-name", Input).value = "Local Logo"
+            form.query_one("#provider-base-url", Input).value = "https://local.example"
+            form.query_one("#provider-list-path", Input).value = "/v1/models"
+            form.query_one("#provider-logo-kind", Select).value = "file"
+            await pilot.pause()
+            self.assertFalse(form.query_one("#provider-logo-value", Input).disabled)
+            form.query_one("#provider-logo-value", Input).value = svg_path
             await pilot.pause()
             await pilot.press("ctrl+s")
             await pilot.pause()
             conn = catalog.connect(self.db_path)
             try:
-                self.assertIsNotNone(
-                    conn.execute("SELECT 1 FROM provider WHERE id = 'added-provider'").fetchone()
-                )
+                row = conn.execute(
+                    "SELECT logo_source FROM provider WHERE id = 'local-logo'"
+                ).fetchone()
+                self.assertIsNotNone(row)
+                self.assertEqual(row["logo_source"], svg_path)
             finally:
                 conn.close()
+            logo_dir = os.path.join(self.temp.name, "logo")
+            light_path = os.path.join(logo_dir, "local-logo.svg")
+            dark_path = os.path.join(logo_dir, "local-logo_dark.svg")
+            self.assertTrue(os.path.isfile(light_path))
+            self.assertTrue(os.path.isfile(dark_path))
+            with open(light_path, "rb") as handle:
+                self.assertEqual(
+                    handle.read(), b'<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0"/></svg>'
+                )
+            with open(dark_path, encoding="utf-8") as handle:
+                self.assertIn('fill="#CED0D6"', handle.read())
 
     async def test_link_merge_and_edit_keeps_rowid(self) -> None:
         self.app = CatalogApp(self.db_path)

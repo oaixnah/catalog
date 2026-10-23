@@ -10,13 +10,15 @@ reviewed-registry.json
     │  python3 catalog.py sign --key catalog.pem
     ▼
 reviewed-registry.signed.json
+logo/<providerId>.svg
+logo/<providerId>_dark.svg
     │  GitHub Actions（.github/workflows/publish.yml）force push
     ▼
-prod 分支（仅这两个 JSON 文件）→ CDN https://catalog.ravel.oaix.tech
+prod 分支（两个 JSON + logo/）→ CDN https://catalog.ravel.oaix.tech
 ```
 
-- **main**：只放 `catalog.sqlite`、`catalog.py`、`pyproject.toml`、文档。两个 JSON 由 `.gitignore` 忽略，**不要提交到 main**。
-- **prod**：由 CI 自动维护的孤立分支，永远只包含 `reviewed-registry.json` 与 `reviewed-registry.signed.json`，**不要手工提交**。
+- **main**：放 `catalog.sqlite`、`catalog.py`、`pyproject.toml`、`logo/`、文档。两个 JSON 由 `.gitignore` 忽略，**不要提交到 main**。
+- **prod**：由 CI 自动维护的孤立分支，永远只包含 `reviewed-registry.json`、`reviewed-registry.signed.json` 与 `logo/`，**不要手工提交**。
 - 旧流程（编辑 JSON → 导入 SQLite）已废弃，`import_to_sqlite.py` / `import.sql` 已删除。
 
 ## 环境要求
@@ -53,10 +55,14 @@ catalog-cli model rm <id>
 
 catalog-cli provider list
 catalog-cli provider add --id groq --name Groq --authentication bearer-api-key \
-    --base-url https://api.groq.com/openai --model-list-path /v1/models
+    --base-url https://api.groq.com/openai --model-list-path /v1/models \
+    --logo-source default
 catalog-cli provider set <id> --base-url https://api.example.com
+catalog-cli provider set <id> --logo-source ./assets/groq.svg
 catalog-cli provider rm <id>
 
+catalog-cli logo sync                  # 为所有 provider 生成缺失的 logo
+catalog-cli logo sync groq --force     # 强制重新抓取指定 provider
 catalog-cli link list
 catalog-cli link bind <provider> <model_ref> [--api-model-id <api_model_id>] \
     --protocol openai-compatible --request-path /v1/chat/completions
@@ -70,7 +76,8 @@ catalog-cli tui --view links       # 直接打开 Links
 
 - `model set --efforts` 会**整体替换**推理强度列表，顺序即导出顺序。
 - `--input null` 表示不单独限制输入。
-- 冒烟测试请复制数据库后加 `--db`：`cp catalog.sqlite /tmp/x.sqlite && catalog-cli --db /tmp/x.sqlite ...`
+- `--logo-source` 支持 `default`（models.dev）、含 `{provider}` 的 http(s) URL 模板，或本地 SVG 路径；详见下文「Provider Logo」。
+- 冒烟测试请复制数据库后加 `--db`：`cp catalog.sqlite /tmp/x.sqlite && catalog-cli --db /tmp/x.sqlite ...`（logo 会写到 `/tmp/logo/`）
 
 ## 交互式 TUI
 
@@ -107,6 +114,7 @@ catalog-cli tui --view links       # 直接打开 Links
 - 关联视图按 `model_ref` 去重；同一 Provider 对同一 Model 需要多个 API model id 时，用 Link 视图按 `n` 新增。
 - Model/Provider 编辑时 id 不可改；Link 编辑时 provider 不可改。修改 Link 的 API model id 使用 `UPDATE`，保留 rowid。
 - Model 的推理强度顺序会保留；TUI 不提供拖动排序，新增勾选项追加到末尾。
+- Provider 表单可配置 Logo source（models.dev / 自定义 URL / 本地文件）；新建或来源变化时立即尝试同步，失败只警告。
 
 ### 测试
 
@@ -114,7 +122,32 @@ catalog-cli tui --view links       # 直接打开 Links
 python3 -m unittest discover -s tests -v
 ```
 
-测试使用临时数据库，不会修改仓库中的 `catalog.sqlite`。
+测试使用临时数据库，不会修改仓库中的 `catalog.sqlite`，也不会访问真实网络。
+
+## Provider Logo
+
+每个 provider 在 `logo/` 下有两套 SVG：
+
+```
+logo/<providerId>.svg        # 浅色/原始版本，保持来源字节不变
+logo/<providerId>_dark.svg   # 深色版本，所有 <path> 的 fill 为 #CED0D6
+```
+
+获取方式保存在 `provider.logo_source`：
+
+| 值 | 含义 |
+|---|---|
+| `default` | `https://models.dev/logos/{provider}.svg` |
+| `https://.../{provider}.svg` | 自定义 URL 模板，仅支持 `{provider}` 占位符；不含占位符的固定 URL 也可 |
+| `./assets/foo.svg` / `/abs/foo.svg` | 本地 SVG；相对路径以仓库根目录为基准，支持 `~` |
+
+- `provider add` 默认 `default`；`provider set --logo-source ...` 可修改并立即同步。
+- `catalog-cli logo sync [provider ...]`：无参数时处理全部 provider；默认只补缺失文件，`--force` 强制重新抓取。
+- 下载失败、文件不存在、SVG 非法都只警告，provider 仍会保存；修复后重跑 `logo sync` 即可。
+- dark 版本仅重写 `<path>` 的 `fill`（包括内联 `style` 中的 `fill:`）；`<circle>`、`<rect>` 等其他元素保持原样。
+- 相对本地路径按 `catalog.py` 所在仓库根目录解析，与当前工作目录无关。
+- CDN 路径：`https://catalog.ravel.oaix.tech/logo/<providerId>.svg` 与 `..._dark.svg`。
+- 删除 provider 会同时删除对应 logo 文件（best effort）。
 
 ## 数据库表结构（5 张表）
 
@@ -158,6 +191,7 @@ provider                          -- 提供商
 | `authentication` | TEXT | `bearer-api-key` / `x-api-key` |
 | `base_url` | TEXT | API 基础 URL |
 | `model_list_path` | TEXT | 模型列表路径 |
+| `logo_source` | TEXT | logo 来源，默认 `default`（models.dev）；也可是 URL 模板或本地路径 |
 
 #### `provider_model`
 
@@ -180,6 +214,7 @@ provider                          -- 提供商
 - `providers` 段：`reviewed-providers-v2` schema（`schemaVersion` = 2）：
   - provider：`{id, displayName, baseUrl, modelList: {path, authentication}, models}`。
   - `models[]` 条目：`{modelId, modelRef, protocol: {type, requestPath}}`（v1 中协议在 provider 级，v2 下沉到每个链接）。
+- `logo_source` 不进入导出 JSON；客户端按 provider id 约定推导 `/logo/<providerId>.svg`。
 
 ## 本地构建（不发布）
 
@@ -192,12 +227,12 @@ cmp reviewed-registry.signed.json <(git show prod:reviewed-registry.signed.json)
 
 ## 发布流程（GitHub Actions）
 
-推送到 main 且 `catalog.sqlite` 有变化时，`.github/workflows/publish.yml` 自动：
+推送到 main 且 `catalog.sqlite` 或 `logo/**` 有变化时，`.github/workflows/publish.yml` 自动：
 
-1. `export --bump-sequence`：sequence 自增后导出 JSON
+1. 仅当 `catalog.sqlite` 变化时 `export --bump-sequence`（自增 sequence），否则普通 export
 2. 用仓库 Secret `CATALOG_SIGNING_KEY` 签名（PKCS8 ed25519 PEM，明文或 base64 均可）
-3. 把自增后的 `catalog.sqlite` 以 `[skip ci]` 提交回 main
-4. force push 到 prod 分支（仅两个文件）
+3. 把自增后的 `catalog.sqlite` 以 `[skip ci]` 提交回 main（未 bump 时不会产生提交）
+4. force push 到 prod 分支（两个 JSON + `logo/`）
 
 也可在 Actions 页手动 `workflow_dispatch`，可选择不 bump sequence（密钥轮换后重签）。
 

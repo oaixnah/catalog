@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sqlite3
 from typing import TYPE_CHECKING, Iterable, Sequence
 
@@ -30,6 +31,30 @@ def _safe_defaults(protocol: str, path: str) -> tuple[str, str]:
     if not path:
         path = data.PROTOCOL_PATHS.get(protocol, data.DEFAULT_REQUEST_PATH)
     return protocol, path
+
+
+LOGO_KINDS = (
+    ("default", "models.dev (default)"),
+    ("url", "Custom URL"),
+    ("file", "Local file"),
+)
+LOGO_PLACEHOLDERS = {
+    "default": catalog.DEFAULT_LOGO_TEMPLATE,
+    "url": "https://example.com/logos/{provider}.svg",
+    "file": "relative/to/repo/logo.svg or /absolute/path/logo.svg",
+}
+
+
+def _logo_kind(source: str) -> str:
+    if (
+        not source
+        or source == catalog.DEFAULT_LOGO_SOURCE
+        or source == catalog.DEFAULT_LOGO_TEMPLATE
+    ):
+        return "default"
+    if source.startswith(("http://", "https://")):
+        return "url"
+    return "file"
 
 
 class ConfirmScreen(ModalScreen[bool]):
@@ -330,13 +355,52 @@ class ProviderFormScreen(BaseFormScreen):
             value="" if record is None else record.model_list_path,
             id="provider-list-path",
         )
+        logo_source = catalog.DEFAULT_LOGO_SOURCE if record is None else record.logo_source
+        logo_kind = _logo_kind(logo_source)
+        yield Label("Logo source", classes="form-label")
+        yield Select(
+            [(label, value) for value, label in LOGO_KINDS],
+            value=logo_kind,
+            allow_blank=False,
+            id="provider-logo-kind",
+        )
+        yield Label("Logo URL / path", classes="form-label")
+        yield Input(
+            value="" if logo_kind == "default" else logo_source,
+            id="provider-logo-value",
+            placeholder=LOGO_PLACEHOLDERS[logo_kind],
+            disabled=logo_kind == "default",
+        )
+
+    def on_select_changed(self, event: Select.Changed) -> None:
+        if event.select.id != "provider-logo-kind" or event.value is Select.BLANK:
+            return
+        kind = str(event.value)
+        logo_input = self.query_one("#provider-logo-value", Input)
+        logo_input.disabled = kind == "default"
+        logo_input.placeholder = LOGO_PLACEHOLDERS.get(kind, "")
+        if kind != "default":
+            logo_input.focus()
 
     def persist(self) -> None:
-        provider_id = self.query_one("#provider-id", Input).value
+        provider_id = self.query_one("#provider-id", Input).value.strip()
         display_name = self.query_one("#provider-name", Input).value
         authentication = str(self.query_one("#provider-auth", Select).value)
         base_url = self.query_one("#provider-base-url", Input).value
         model_list_path = self.query_one("#provider-list-path", Input).value
+        logo_kind = str(self.query_one("#provider-logo-kind", Select).value)
+        logo_value = self.query_one("#provider-logo-value", Input).value.strip()
+        if logo_kind == "default":
+            logo_source = catalog.DEFAULT_LOGO_SOURCE
+        elif not logo_value:
+            raise data.CatalogValidationError("logo URL 或本地路径不能为空")
+        else:
+            logo_source = logo_value
+        try:
+            logo_source = catalog.validate_logo_source(logo_source)
+        except catalog.LogoError as error:
+            raise data.CatalogValidationError(str(error)) from error
+        sync_logo = self.record is None or self.record.logo_source != logo_source
         if self.record is None:
             data.create_provider(
                 self.catalog.connection,
@@ -345,8 +409,10 @@ class ProviderFormScreen(BaseFormScreen):
                 authentication=authentication,
                 base_url=base_url,
                 model_list_path=model_list_path,
+                logo_source=logo_source,
             )
             self.catalog.notify(f"created provider '{provider_id}'")
+            target_id = provider_id
         else:
             data.update_provider(
                 self.catalog.connection,
@@ -355,8 +421,20 @@ class ProviderFormScreen(BaseFormScreen):
                 authentication=authentication,
                 base_url=base_url,
                 model_list_path=model_list_path,
+                logo_source=logo_source,
             )
             self.catalog.notify(f"updated provider '{self.record.id}'")
+            target_id = self.record.id
+        if not sync_logo:
+            return
+        try:
+            catalog.sync_provider_logo(target_id, logo_source, self.catalog.logo_dir, force=True)
+        except (catalog.LogoError, OSError) as error:
+            self.catalog.notify(
+                f"logo sync failed for '{target_id}': {error}",
+                severity="warning",
+                timeout=8,
+            )
 
     @property
     def catalog(self) -> CatalogApp:
@@ -592,6 +670,15 @@ class DetailScreen(Screen[None]):
         self._line(text, "authentication", record.authentication)
         self._line(text, "base_url", record.base_url)
         self._line(text, "model_list_path", record.model_list_path)
+        self._line(text, "logo_source", record.logo_source)
+        try:
+            logo_paths = catalog.logo_file_paths(record.id, self.catalog.logo_dir)
+        except catalog.LogoError:
+            self._line(text, "logo", "invalid provider id for a logo file name")
+        else:
+            for label, path in zip(("logo", "logo_dark"), logo_paths):
+                state = "ok" if os.path.isfile(path) else "missing"
+                self._line(text, label, f"{state}  {path}")
         text.append("\nLINKED MODELS\n", style="bold")
         links = data.fetch_provider_links(self.catalog.connection, record.id)
         if not links:
@@ -708,6 +795,10 @@ class DetailScreen(Screen[None]):
             except (data.CatalogValidationError, sqlite3.Error) as error:
                 self.catalog.notify(str(error), severity="error")
                 return
+            try:
+                catalog.delete_provider_logos(provider.id, self.catalog.logo_dir)
+            except (catalog.LogoError, OSError) as error:
+                self.catalog.notify(f"logo cleanup failed: {error}", severity="warning")
             self._finish_delete(f"deleted provider '{provider.id}'")
 
         self.app.push_screen(ConfirmScreen("DELETE PROVIDER?", lines, "Delete"), confirmed)

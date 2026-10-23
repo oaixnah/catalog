@@ -19,9 +19,14 @@ import os
 import re
 import shutil
 import sqlite3
+import string
 import subprocess
 import sys
 import tempfile
+import urllib.error
+import urllib.parse
+import urllib.request
+import xml.etree.ElementTree as ET
 from typing import NoReturn
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -41,6 +46,20 @@ PROVIDERS_SCHEMA = "./reviewed-providers-v2.schema.json"
 EFFORTS = ("none", "low", "medium", "high", "xhigh", "max")
 AUTHENTICATIONS = ("bearer-api-key", "x-api-key")
 PROTOCOLS = ("openai-responses", "anthropic-messages", "openai-compatible")
+
+DEFAULT_LOGO_SOURCE = "default"
+DEFAULT_LOGO_TEMPLATE = "https://models.dev/logos/{provider}.svg"
+DARK_LOGO_FILL = "#CED0D6"
+LOGO_DIR_NAME = "logo"
+LOGO_TIMEOUT_SECONDS = 15
+LOGO_MAX_BYTES = 2 * 1024 * 1024
+SVG_NAMESPACE = "http://www.w3.org/2000/svg"
+XLINK_NAMESPACE = "http://www.w3.org/1999/xlink"
+
+
+class LogoError(RuntimeError):
+    pass
+
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS registry (
@@ -74,7 +93,8 @@ CREATE TABLE IF NOT EXISTS provider (
     display_name    TEXT NOT NULL,
     authentication  TEXT NOT NULL,
     base_url        TEXT NOT NULL,
-    model_list_path TEXT NOT NULL
+    model_list_path TEXT NOT NULL,
+    logo_source     TEXT NOT NULL DEFAULT 'default'
 );
 
 CREATE TABLE IF NOT EXISTS provider_model (
@@ -95,12 +115,23 @@ def die(message) -> NoReturn:
     sys.exit(1)
 
 
+def ensure_schema(conn):
+    tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    if "provider" not in tables:
+        return
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(provider)")}
+    if "logo_source" not in columns:
+        conn.execute("ALTER TABLE provider ADD COLUMN logo_source TEXT NOT NULL DEFAULT 'default'")
+        conn.commit()
+
+
 def connect(path, init=False):
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     if init:
         conn.executescript(SCHEMA_SQL)
+    ensure_schema(conn)
     return conn
 
 
@@ -159,6 +190,185 @@ def write_text(path, text):
         handle.write(text)
 
 
+def write_bytes_atomic(path, data):
+    directory = os.path.dirname(os.path.abspath(path))
+    os.makedirs(directory, exist_ok=True)
+    fd, temp_path = tempfile.mkstemp(prefix=".logo-", suffix=".tmp", dir=directory)
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(data)
+        os.chmod(temp_path, 0o644)
+        os.replace(temp_path, path)
+    except BaseException:
+        try:
+            os.remove(temp_path)
+        except OSError:
+            pass
+        raise
+
+
+# ---------------------------------------------------------------------------
+# provider logos
+# ---------------------------------------------------------------------------
+
+
+def logo_dir_for_db(db_path):
+    return os.path.join(os.path.dirname(os.path.abspath(db_path)), LOGO_DIR_NAME)
+
+
+def validate_logo_source(source):
+    if source is None:
+        return DEFAULT_LOGO_SOURCE
+    value = str(source).strip()
+    if not value:
+        raise LogoError("logo source must not be empty")
+    if value.casefold() in ("default", "models.dev", "modelsdev"):
+        return DEFAULT_LOGO_SOURCE
+    if value.startswith(("http://", "https://")):
+        if any(character.isspace() for character in value):
+            raise LogoError("logo URL must not contain whitespace")
+        parts = urllib.parse.urlsplit(value.replace("{provider}", "provider"))
+        if parts.scheme not in ("http", "https") or not parts.netloc:
+            raise LogoError(f"invalid logo URL '{value}'")
+        try:
+            parsed = list(string.Formatter().parse(value))
+        except ValueError as error:
+            raise LogoError(f"invalid logo URL template: {error}") from error
+        for _literal, field, spec, conversion in parsed:
+            if field is None:
+                continue
+            if field != "provider" or spec or conversion:
+                raise LogoError(f"unsupported logo URL placeholder '{{{field}}}' (only {{provider}} is supported)")
+        return value
+    if "://" in value:
+        raise LogoError(f"unsupported logo URL scheme in '{value}' (use http or https)")
+    if any(character in value for character in ("\x00", "\n", "\r")):
+        raise LogoError("invalid logo file path")
+    return value
+
+
+def resolve_logo_source(source, provider_id):
+    source = validate_logo_source(source)
+    if source == DEFAULT_LOGO_SOURCE:
+        template = DEFAULT_LOGO_TEMPLATE
+    elif source.startswith(("http://", "https://")):
+        template = source
+    else:
+        expanded = os.path.expanduser(source)
+        if os.path.isabs(expanded):
+            return expanded
+        return os.path.join(SCRIPT_DIR, expanded)
+    return template.format(provider=urllib.parse.quote(provider_id, safe=""))
+
+
+def logo_file_paths(provider_id, logo_dir):
+    if (
+        not provider_id
+        or provider_id in (".", "..")
+        or any(character in provider_id for character in ("/", "\\", "\x00", "\n", "\r"))
+    ):
+        raise LogoError(f"provider id '{provider_id}' cannot be used as a logo file name")
+    return (
+        os.path.join(logo_dir, f"{provider_id}.svg"),
+        os.path.join(logo_dir, f"{provider_id}_dark.svg"),
+    )
+
+
+def _local_name(tag):
+    return tag.rsplit("}", 1)[-1]
+
+
+def _parse_svg(data):
+    try:
+        root = ET.fromstring(data)
+    except ET.ParseError as error:
+        raise LogoError(f"invalid SVG: {error}") from error
+    if _local_name(root.tag) != "svg":
+        raise LogoError("logo source is not an SVG document")
+    return root
+
+
+def fetch_logo_bytes(source, provider_id):
+    resolved = resolve_logo_source(source, provider_id)
+    if resolved.startswith(("http://", "https://")):
+        request = urllib.request.Request(
+            resolved,
+            headers={"User-Agent": "catalog-cli", "Accept": "image/svg+xml"},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=LOGO_TIMEOUT_SECONDS) as response:
+                data = response.read(LOGO_MAX_BYTES + 1)
+        except (urllib.error.URLError, OSError) as error:
+            raise LogoError(f"cannot download {resolved}: {error}") from error
+    else:
+        if not os.path.isfile(resolved):
+            raise LogoError(f"logo file not found: {resolved}")
+        try:
+            with open(resolved, "rb") as handle:
+                data = handle.read(LOGO_MAX_BYTES + 1)
+        except OSError as error:
+            raise LogoError(f"cannot read logo file {resolved}: {error}") from error
+    if len(data) > LOGO_MAX_BYTES:
+        raise LogoError(f"logo exceeds {LOGO_MAX_BYTES} bytes: {resolved}")
+    _parse_svg(data)
+    return data
+
+
+def dark_svg_bytes(data):
+    ET.register_namespace("", SVG_NAMESPACE)
+    ET.register_namespace("xlink", XLINK_NAMESPACE)
+    root = _parse_svg(data)
+    for element in root.iter():
+        if _local_name(element.tag) != "path":
+            continue
+        element.set("fill", DARK_LOGO_FILL)
+        style = element.get("style")
+        if style:
+            declarations = [part.strip() for part in style.split(";") if part.strip()]
+            replaced = False
+            for index, declaration in enumerate(declarations):
+                name, _, _value = declaration.partition(":")
+                if name.strip().casefold() == "fill":
+                    declarations[index] = f"fill:{DARK_LOGO_FILL}"
+                    replaced = True
+            if replaced:
+                element.set("style", ";".join(declarations))
+    return ET.tostring(root, encoding="utf-8", xml_declaration=False)
+
+
+def sync_provider_logo(provider_id, source, logo_dir, *, force=False):
+    light_path, dark_path = logo_file_paths(provider_id, logo_dir)
+    os.makedirs(logo_dir, exist_ok=True)
+    if not force:
+        if os.path.isfile(light_path) and os.path.isfile(dark_path):
+            return light_path, dark_path
+        if os.path.isfile(light_path):
+            with open(light_path, "rb") as handle:
+                light_data = handle.read(LOGO_MAX_BYTES + 1)
+            if len(light_data) > LOGO_MAX_BYTES:
+                raise LogoError(f"logo exceeds {LOGO_MAX_BYTES} bytes: {light_path}")
+            write_bytes_atomic(dark_path, dark_svg_bytes(light_data))
+            return light_path, dark_path
+    light_data = fetch_logo_bytes(source, provider_id)
+    dark_data = dark_svg_bytes(light_data)
+    write_bytes_atomic(light_path, light_data)
+    write_bytes_atomic(dark_path, dark_data)
+    return light_path, dark_path
+
+
+def delete_provider_logos(provider_id, logo_dir):
+    removed = []
+    for path in logo_file_paths(provider_id, logo_dir):
+        try:
+            os.remove(path)
+            removed.append(path)
+        except FileNotFoundError:
+            continue
+        except OSError as error:
+            raise LogoError(f"cannot remove {path}: {error}") from error
+    return removed
+
+
 # ---------------------------------------------------------------------------
 # validation
 # ---------------------------------------------------------------------------
@@ -173,9 +383,13 @@ def collect_problems(conn):
     for row in conn.execute("SELECT model_id, effort FROM model_reasoning_effort"):
         if row["effort"] not in EFFORTS:
             problems.append(f"model '{row['model_id']}': invalid effort '{row['effort']}'")
-    for row in conn.execute("SELECT id, authentication FROM provider"):
+    for row in conn.execute("SELECT id, authentication, logo_source FROM provider"):
         if row["authentication"] not in AUTHENTICATIONS:
             problems.append(f"provider '{row['id']}': invalid authentication '{row['authentication']}'")
+        try:
+            validate_logo_source(row["logo_source"])
+        except LogoError as error:
+            problems.append(f"provider '{row['id']}': {error}")
     for row in conn.execute("SELECT provider_id, model_id, protocol_type, request_path FROM provider_model"):
         if not row["model_id"].strip():
             problems.append(f"provider '{row['provider_id']}': empty provider_model.model_id")
@@ -463,6 +677,7 @@ def cmd_provider_show(args):
     print(f"authentication:  {provider['authentication']}")
     print(f"base_url:        {provider['base_url']}")
     print(f"model_list_path: {provider['model_list_path']}")
+    print(f"logo_source:     {provider['logo_source']}")
     print("models:")
     for row in conn.execute(
         "SELECT model_id, model_ref, protocol_type, request_path FROM provider_model WHERE provider_id = ? ORDER BY rowid",
@@ -474,22 +689,48 @@ def cmd_provider_show(args):
 def cmd_provider_add(args):
     if args.authentication not in AUTHENTICATIONS:
         die(f"invalid authentication '{args.authentication}' (choose from: {', '.join(AUTHENTICATIONS)})")
+    try:
+        logo_source = validate_logo_source(args.logo_source)
+    except LogoError as error:
+        die(str(error))
     conn = connect(args.db)
     try:
         conn.execute(
-            """INSERT INTO provider (id, display_name, authentication, base_url, model_list_path)
-               VALUES (?, ?, ?, ?, ?)""",
-            (args.id, args.name, args.authentication, args.base_url, args.model_list_path),
+            """INSERT INTO provider (id, display_name, authentication, base_url, model_list_path, logo_source)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (
+                args.id,
+                args.name,
+                args.authentication,
+                args.base_url,
+                args.model_list_path,
+                logo_source,
+            ),
         )
         conn.commit()
     except sqlite3.IntegrityError as error:
         die(f"cannot add provider: {error}")
+    conn.close()
     print(f"added provider '{args.id}'")
+    logo_dir = logo_dir_for_db(args.db)
+    try:
+        light_path, dark_path = sync_provider_logo(args.id, logo_source, logo_dir, force=True)
+    except (LogoError, OSError) as error:
+        print(f"warning: logo not synced for '{args.id}': {error}", file=sys.stderr)
+    else:
+        print(f"logo: {light_path}, {dark_path}")
 
 
 def cmd_provider_set(args):
     if args.authentication is not None and args.authentication not in AUTHENTICATIONS:
         die(f"invalid authentication '{args.authentication}' (choose from: {', '.join(AUTHENTICATIONS)})")
+    logo_source = None
+    if args.logo_source is not None:
+        try:
+            logo_source = validate_logo_source(args.logo_source)
+        except LogoError as error:
+            die(str(error))
+        args.logo_source = logo_source
     conn = connect(args.db)
     if conn.execute("SELECT 1 FROM provider WHERE id = ?", (args.id,)).fetchone() is None:
         die(f"provider '{args.id}' not found")
@@ -500,6 +741,7 @@ def cmd_provider_set(args):
         ("authentication", "authentication"),
         ("base_url", "base_url"),
         ("model_list_path", "model_list_path"),
+        ("logo_source", "logo_source"),
     ):
         value = getattr(args, field)
         if value is not None:
@@ -509,7 +751,16 @@ def cmd_provider_set(args):
         die("nothing to update; pass at least one option")
     conn.execute(f"UPDATE provider SET {', '.join(updates)} WHERE id = ?", (*values, args.id))
     conn.commit()
+    conn.close()
     print(f"updated provider '{args.id}'")
+    if logo_source is not None:
+        logo_dir = logo_dir_for_db(args.db)
+        try:
+            light_path, dark_path = sync_provider_logo(args.id, logo_source, logo_dir, force=True)
+        except (LogoError, OSError) as error:
+            print(f"warning: logo not synced for '{args.id}': {error}", file=sys.stderr)
+        else:
+            print(f"logo: {light_path}, {dark_path}")
 
 
 def cmd_provider_rm(args):
@@ -518,7 +769,59 @@ def cmd_provider_rm(args):
     conn.commit()
     if cursor.rowcount == 0:
         die(f"provider '{args.id}' not found")
+    conn.close()
     print(f"removed provider '{args.id}' (and its model links)")
+    try:
+        removed = delete_provider_logos(args.id, logo_dir_for_db(args.db))
+    except LogoError as error:
+        print(f"warning: logo cleanup failed for '{args.id}': {error}", file=sys.stderr)
+    else:
+        if removed:
+            print(f"removed logo files: {', '.join(removed)}")
+
+
+# ---------------------------------------------------------------------------
+# logo commands
+# ---------------------------------------------------------------------------
+
+
+def cmd_logo_sync(args):
+    conn = connect(args.db)
+    if args.providers:
+        rows = []
+        missing = 0
+        for provider_id in args.providers:
+            row = conn.execute(
+                "SELECT id, logo_source FROM provider WHERE id = ?", (provider_id,)
+            ).fetchone()
+            if row is None:
+                print(f"error: provider '{provider_id}' not found", file=sys.stderr)
+                missing += 1
+            else:
+                rows.append(row)
+    else:
+        rows = list(conn.execute("SELECT id, logo_source FROM provider ORDER BY rowid"))
+        missing = 0
+    conn.close()
+    if not rows:
+        if missing:
+            sys.exit(1)
+        print("(no providers)")
+        return
+    logo_dir = logo_dir_for_db(args.db)
+    failures = missing
+    for row in rows:
+        try:
+            light_path, dark_path = sync_provider_logo(
+                row["id"], row["logo_source"], logo_dir, force=args.force
+            )
+        except (LogoError, OSError) as error:
+            print(f"error: {row['id']}: {error}", file=sys.stderr)
+            failures += 1
+        else:
+            print(f"ok: {row['id']}  {light_path}  {dark_path}")
+    if failures:
+        sys.exit(1)
 
 
 # ---------------------------------------------------------------------------
@@ -791,6 +1094,13 @@ def build_parser():
     provider_add.add_argument("--authentication", required=True, choices=AUTHENTICATIONS)
     provider_add.add_argument("--base-url", required=True)
     provider_add.add_argument("--model-list-path", required=True)
+    provider_add.add_argument(
+        "--logo-source",
+        help=(
+            "logo source: 'default' for models.dev, an http(s) URL template containing "
+            "{provider}, or a local SVG file path (default: models.dev)"
+        ),
+    )
     provider_add.set_defaults(func=cmd_provider_add)
 
     provider_set = provider_sub.add_parser("set", help="update a provider")
@@ -799,11 +1109,33 @@ def build_parser():
     provider_set.add_argument("--authentication", choices=AUTHENTICATIONS)
     provider_set.add_argument("--base-url")
     provider_set.add_argument("--model-list-path")
+    provider_set.add_argument(
+        "--logo-source",
+        help=(
+            "logo source: 'default' for models.dev, an http(s) URL template containing "
+            "{provider}, or a local SVG file path"
+        ),
+    )
     provider_set.set_defaults(func=cmd_provider_set)
 
     provider_rm = provider_sub.add_parser("rm", help="delete a provider (cascades links)")
     provider_rm.add_argument("id")
     provider_rm.set_defaults(func=cmd_provider_rm)
+
+    # logo ---------------------------------------------------------------
+    logo_parser = subparsers.add_parser("logo", help="manage provider logo assets")
+    logo_sub = logo_parser.add_subparsers(dest="subcommand", required=True)
+
+    logo_sync = logo_sub.add_parser(
+        "sync", help="generate logo/<providerId>.svg and logo/<providerId>_dark.svg"
+    )
+    logo_sync.add_argument("providers", nargs="*", help="provider ids (default: all)")
+    logo_sync.add_argument(
+        "--force",
+        action="store_true",
+        help="re-fetch even when both logo files already exist",
+    )
+    logo_sync.set_defaults(func=cmd_logo_sync)
 
     # link ---------------------------------------------------------------
     link_parser = subparsers.add_parser("link", help="manage provider<->model links")

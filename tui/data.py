@@ -46,6 +46,7 @@ class ProviderRecord:
     authentication: str
     base_url: str
     model_list_path: str
+    logo_source: str
     model_ids: tuple[str, ...]
 
 
@@ -199,6 +200,7 @@ def fetch_providers(conn: sqlite3.Connection) -> list[ProviderRecord]:
                 authentication=row["authentication"],
                 base_url=row["base_url"],
                 model_list_path=row["model_list_path"],
+                logo_source=row["logo_source"],
                 model_ids=tuple(model_ids),
             )
         )
@@ -412,6 +414,13 @@ def update_model(
         _raise_integrity(error)
 
 
+def _logo_source(value: object) -> str:
+    try:
+        return catalog.validate_logo_source(value)
+    except catalog.LogoError as error:
+        raise CatalogValidationError(str(error)) from error
+
+
 def create_provider(
     conn: sqlite3.Connection,
     *,
@@ -420,18 +429,20 @@ def create_provider(
     authentication: str,
     base_url: str,
     model_list_path: str,
+    logo_source: str = catalog.DEFAULT_LOGO_SOURCE,
 ) -> None:
     provider_id = _text(provider_id, "id")
     display_name = _text(display_name, "display name")
     authentication = _validate_authentication(authentication)
     base_url = _text(base_url, "base url")
     model_list_path = _text(model_list_path, "model list path")
+    logo_source = _logo_source(logo_source)
     try:
         with conn:
             conn.execute(
-                """INSERT INTO provider (id, display_name, authentication, base_url, model_list_path)
-                   VALUES (?, ?, ?, ?, ?)""",
-                (provider_id, display_name, authentication, base_url, model_list_path),
+                """INSERT INTO provider (id, display_name, authentication, base_url, model_list_path, logo_source)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (provider_id, display_name, authentication, base_url, model_list_path, logo_source),
             )
     except sqlite3.IntegrityError as error:
         _raise_integrity(error)
@@ -445,18 +456,21 @@ def update_provider(
     authentication: str,
     base_url: str,
     model_list_path: str,
+    logo_source: str,
 ) -> None:
     _existing_provider(conn, provider_id)
     display_name = _text(display_name, "display name")
     authentication = _validate_authentication(authentication)
     base_url = _text(base_url, "base url")
     model_list_path = _text(model_list_path, "model list path")
+    logo_source = _logo_source(logo_source)
     with conn:
         conn.execute(
             """UPDATE provider
-                  SET display_name = ?, authentication = ?, base_url = ?, model_list_path = ?
+                  SET display_name = ?, authentication = ?, base_url = ?, model_list_path = ?,
+                      logo_source = ?
                 WHERE id = ?""",
-            (display_name, authentication, base_url, model_list_path, provider_id),
+            (display_name, authentication, base_url, model_list_path, logo_source, provider_id),
         )
 
 

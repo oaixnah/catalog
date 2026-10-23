@@ -2,23 +2,27 @@
 
 ## 项目概览
 
-Ravel 的自建模型/提供商目录。**`catalog.sqlite` 是唯一数据源**，由它生成 `reviewed-registry.json` 与 `reviewed-registry.signed.json`，CI 发布到 `prod` 分支（仅这两个文件）供 CDN 托管：https://catalog.ravel.oaix.tech。CLI 通过 editable 安装暴露为 `catalog-cli`。
+Ravel 的自建模型/提供商目录。**`catalog.sqlite` 是唯一数据源**，由它生成 `reviewed-registry.json` 与 `reviewed-registry.signed.json`；`logo/` 存放 provider 的明暗两套 SVG。CI 发布到 `prod` 分支（两个 JSON + `logo/`）供 CDN 托管：https://catalog.ravel.oaix.tech。CLI 通过 editable 安装暴露为 `catalog-cli`。
 
 ## 分支与数据流（最容易踩错）
 
 ```
-catalog.sqlite → catalog.py export → reviewed-registry.json → catalog.py sign → reviewed-registry.signed.json → prod → CDN
+catalog.sqlite ─┬→ catalog.py export → reviewed-registry.json ─┐
+                │                                             ├→ sign → prod → CDN
+logo/<id>.svg ──┴─────────────────────────────────────────────┘
+logo/<id>_dark.svg
 ```
 
-- main：只放 `catalog.sqlite` / `catalog.py` / `pyproject.toml` / 文档；两个 JSON 已被 `.gitignore` 忽略，**不要提交到 main**。
-- prod：由 `.github/workflows/publish.yml` 强制推送，永远只含两个 JSON；用 `git show prod:reviewed-registry.json` 查看线上内容，**不要手工提交**；不要给 prod 开分支保护（CI 需要 force push）。
+- main：放 `catalog.sqlite` / `catalog.py` / `pyproject.toml` / `logo/` / 文档；两个 JSON 已被 `.gitignore` 忽略，**不要提交到 main**。
+- prod：由 `.github/workflows/publish.yml` 强制推送，永远只含两个 JSON 与 `logo/`；用 `git show prod:reviewed-registry.json` 查看线上内容，**不要手工提交**；不要给 prod 开分支保护（CI 需要 force push）。
 - 旧的「编辑 JSON → 导入 SQLite」脚本已删除；不要把 JSON 当数据源改回去。
-- CI 每次发布把 `sequence` +1 并回写 `catalog.sqlite` 到 main（`[skip ci]`）：**改数据前先 `git pull`**。若 main 有分支保护，需放行 GitHub Actions 推送。
+- CI 发布时只有 `catalog.sqlite` 变化才把 `sequence` +1 并回写 `catalog.sqlite` 到 main（`[skip ci]`）；纯 logo 更新不 bump。**改数据前先 `git pull`**。若 main 有分支保护，需放行 GitHub Actions 推送。
 
 ## 常用命令
 
 - 安装 CLI（进入虚拟环境后，必须 editable）：`uv pip install -e .` 或 `python3 -m pip install -e .`；之后 `catalog-cli` 与 `python3 catalog.py` 等价
 - CRUD：`catalog-cli model|provider|link list|show|add|set|rm ...`，帮助 `catalog-cli --help`
+- Logo：`catalog-cli logo sync [provider ...] [--force]`；add/set 时用 `--logo-source` 指定来源
 - TUI：`catalog-cli tui [--view models|providers|links]`（依赖 Textual，随 `pip install -e .` 安装）
 - 校验：`catalog-cli validate`；`export` 会先校验，失败拒绝导出
 - 本地构建（不发布）：`catalog-cli export`，再 `catalog-cli sign --key catalog.pem`
@@ -41,7 +45,12 @@ catalog.sqlite → catalog.py export → reviewed-registry.json → catalog.py s
 - 签名信封 `formatVersion` 独立于 registry，固定为 1（`SIGNED_FORMAT_VERSION`），不受 registry 格式升级影响。
 - 枚举：efforts = none/low/medium/high/xhigh/max；authentication = bearer-api-key/x-api-key；protocol = openai-responses/anthropic-messages/openai-compatible（protocol 存在 `provider_model` 行上，`link bind` 时必填）。
 - `provider_model.model_ref` 必须存在于 model 表（外键；`model rm` 会级联删除 reasoning efforts 与 provider 关联）。
-- schema 变更必须同步 `catalog.py` 的 `SCHEMA_SQL`、导出逻辑与 `CATALOG_GUIDE.md`。
+- logo 固定为 `logo/<providerId>.svg` 与 `logo/<providerId>_dark.svg`，必须提交到 main 并随 prod 发布；CDN 路径为 `/logo/<providerId>.svg`。
+- `provider.logo_source` 默认 `default`，解析为 `https://models.dev/logos/{provider}.svg`；也支持只含 `{provider}` 占位符的 http(s) URL 模板或本地 SVG 路径。相对路径以仓库根目录为基准。
+- dark 版本由 light 版本生成：所有 `<path>` 的 `fill` 必须设为 `#CED0D6`（含内联 style 的 fill 声明）；light 版本保持原始字节。
+- logo 抓取失败不阻止 provider 保存，只警告；`catalog-cli logo sync [--force]` 用于补全/刷新。
+- 测试不得访问真实网络：URL 抓取用 mock，本地文件用临时目录。
+- schema 变更必须同步 `catalog.py` 的 `SCHEMA_SQL`、迁移逻辑、导出逻辑与 `CATALOG_GUIDE.md`。
 
 ## 验证回归
 

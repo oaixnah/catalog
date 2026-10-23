@@ -71,6 +71,10 @@ class CatalogApp(App[None]):
             raise RuntimeError("database connection is not ready")
         return self.conn
 
+    @property
+    def logo_dir(self) -> str:
+        return catalog.logo_dir_for_db(self.db_path)
+
     def refresh_all(self) -> None:
         if self.main_screen is not None:
             self.main_screen.refresh_panes()
@@ -576,6 +580,11 @@ class ProviderListPane(EntityListPane):
             except (data.CatalogValidationError, sqlite3.Error) as error:
                 self.catalog.notify(str(error), severity="error")
                 return
+            for key in keys:
+                try:
+                    catalog.delete_provider_logos(key, self.catalog.logo_dir)
+                except (catalog.LogoError, OSError) as error:
+                    self.catalog.notify(f"logo cleanup failed: {error}", severity="warning")
             self._after_delete(f"deleted {deleted} provider(s)", keys)
 
         self.catalog.push_screen(ConfirmScreen("DELETE PROVIDER(S)?", lines, "Delete"), confirmed)

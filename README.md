@@ -1,6 +1,6 @@
 # Catalog
 
-Ravel 的自建模型/提供商目录。数据源为 `catalog.sqlite`，由其生成 `reviewed-registry.json` 与 `reviewed-registry.signed.json`，通过 CI 发布到 `prod` 分支，由 CDN（https://catalog.ravel.oaix.tech）托管。
+Ravel 的自建模型/提供商目录。数据源为 `catalog.sqlite`，由其生成 `reviewed-registry.json` 与 `reviewed-registry.signed.json`；`logo/` 保存每个 provider 的明暗两套 SVG。CI 将两个 JSON 与 `logo/` 发布到 `prod` 分支，由 CDN（https://catalog.ravel.oaix.tech）托管。
 
 - 维护手册：[CATALOG_GUIDE.md](CATALOG_GUIDE.md)
 - CLI：`catalog-cli --help`
@@ -15,6 +15,19 @@ catalog-cli --help
 ```
 
 `python3 catalog.py ...` 仍然可用，CI 也继续使用它。必须使用 `-e`（editable）：数据库、签名私钥和导出产物都在仓库根目录，CLI 默认按 `catalog.py` 所在目录定位它们。
+
+## Provider Logo
+
+`logo/<providerId>.svg` 与 `logo/<providerId>_dark.svg` 由 provider 的 `logo_source` 生成。默认来源是 `https://models.dev/logos/{provider}.svg`；也可以使用只含 `{provider}` 的 http(s) URL 模板或本地 SVG 路径：
+
+```bash
+catalog-cli provider add ... --logo-source default
+catalog-cli provider set <id> --logo-source https://example.com/logos/{provider}.svg
+catalog-cli provider set <id> --logo-source ./assets/openai.svg
+catalog-cli logo sync [provider ...] [--force]
+```
+
+dark 版本会把所有 `<path>` 的 `fill` 设为 `#CED0D6`；获取失败只警告，provider 仍会保存。CDN 路径为 `/logo/<providerId>.svg` 与 `/logo/<providerId>_dark.svg`。
 
 ## 交互式 TUI
 

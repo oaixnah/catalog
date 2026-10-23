@@ -1,10 +1,10 @@
 name: publish-catalog
 
 # catalog.sqlite is the source of truth on main. This workflow:
-#   1. bumps registry.sequence and exports reviewed-registry.json from the database
+#   1. bumps registry.sequence (only when catalog.sqlite changed) and exports reviewed-registry.json
 #   2. signs it (ed25519) into reviewed-registry.signed.json
 #   3. commits the bumped catalog.sqlite back to main with [skip ci]
-#   4. force-pushes a prod branch that contains ONLY the two JSON files (CDN origin)
+#   4. force-pushes a prod branch that contains the two JSON files plus logo/ (CDN origin)
 #
 # Required repository secret: CATALOG_SIGNING_KEY (PKCS8 ed25519 PEM, raw or base64).
 
@@ -13,6 +13,7 @@ on:
     branches: [main]
     paths:
       - catalog.sqlite
+      - logo/**
   workflow_dispatch:
     inputs:
       bump_sequence:
@@ -43,11 +44,27 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       - name: Export reviewed-registry.json
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.sha }}
+          INPUT_BUMP: ${{ inputs.bump_sequence }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.bump_sequence }}" != "true" ]; then
-            python3 catalog.py export
-          else
+          BUMP=true
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            if [ "$INPUT_BUMP" != "true" ]; then
+              BUMP=false
+            fi
+          elif [ -n "$BEFORE_SHA" ] && [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ]; then
+            if git cat-file -e "$BEFORE_SHA^{commit}" 2>/dev/null \
+              && git diff --quiet "$BEFORE_SHA" "$AFTER_SHA" -- catalog.sqlite; then
+              BUMP=false
+            fi
+          fi
+          if [ "$BUMP" = "true" ]; then
             python3 catalog.py export --bump-sequence
+          else
+            python3 catalog.py export
           fi
 
       - name: Sign reviewed-registry.signed.json
@@ -78,12 +95,16 @@ jobs:
             git push origin HEAD:main
           fi
 
-      - name: Publish the two files to the prod branch
+      - name: Publish the registry and logos to the prod branch
         run: |
           SEQUENCE=$(python3 -c "import json; print(json.load(open('reviewed-registry.json'))['sequence'])")
           BLOB_JSON=$(git hash-object -w reviewed-registry.json)
           BLOB_SIGNED=$(git hash-object -w reviewed-registry.signed.json)
-          TREE=$(printf '100644 blob %s\treviewed-registry.json\n100644 blob %s\treviewed-registry.signed.json\n' "$BLOB_JSON" "$BLOB_SIGNED" | git mktree)
+          if LOGO_TREE=$(git rev-parse HEAD:logo 2>/dev/null); then
+            TREE=$(printf '040000 tree %s\tlogo\n100644 blob %s\treviewed-registry.json\n100644 blob %s\treviewed-registry.signed.json\n' "$LOGO_TREE" "$BLOB_JSON" "$BLOB_SIGNED" | git mktree)
+          else
+            TREE=$(printf '100644 blob %s\treviewed-registry.json\n100644 blob %s\treviewed-registry.signed.json\n' "$BLOB_JSON" "$BLOB_SIGNED" | git mktree)
+          fi
           COMMIT=$(git commit-tree "$TREE" -m "publish reviewed registry (sequence $SEQUENCE)")
           git push --force origin "$COMMIT:refs/heads/prod"
           echo "published sequence $SEQUENCE to prod ($COMMIT)"
