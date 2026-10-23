@@ -1,0 +1,218 @@
+Screen {
+    background: #0b1220;
+    color: #e2e8f0;
+}
+
+Header {
+    background: #172033;
+    color: #e2e8f0;
+}
+
+#tab-bar {
+    height: 1;
+    padding: 0 1;
+    background: #172033;
+}
+
+#views {
+    height: 1fr;
+}
+
+.list-pane {
+    height: 1fr;
+    padding: 0 1;
+}
+
+.list-pane .table {
+    height: 1fr;
+    border: round #334155;
+    background: #0f172a;
+}
+
+ActionBar {
+    height: 1;
+    padding: 0 1;
+    background: #172033;
+}
+
+StatusBar {
+    height: 1;
+    padding: 0 1;
+    color: #cbd5e1;
+    background: #0f172a;
+}
+
+#keybar {
+    height: 1;
+    padding: 0 1;
+    color: #94a3b8;
+    background: #172033;
+}
+
+DetailScreen {
+    padding: 0 1;
+    background: #0b1220;
+}
+
+#detail-title {
+    height: 1;
+    padding: 0 1;
+    color: #7dd3fc;
+    background: #172033;
+    text-style: bold;
+}
+
+DetailScreen > VerticalScroll {
+    height: 1fr;
+}
+
+#detail-body {
+    padding: 1 2;
+}
+
+.screen-title {
+    height: 1;
+    padding: 0 1;
+    color: #7dd3fc;
+    background: #172033;
+    text-style: bold;
+}
+
+.form-scroll {
+    height: 1fr;
+}
+
+.form-grid {
+    grid-size: 2;
+    grid-columns: 24 1fr;
+    grid-rows: auto;
+    padding: 1;
+    height: auto;
+}
+
+.form-label {
+    height: 3;
+    content-align: left middle;
+    color: #94a3b8;
+}
+
+.form-grid Input,
+.form-grid Select {
+    height: 3;
+}
+
+.form-grid Switch {
+    height: 3;
+    width: auto;
+}
+
+.form-section {
+    height: 1;
+    color: #fbbf24;
+    text-style: bold;
+}
+
+.span-2 {
+    column-span: 2;
+}
+
+EffortSelector.effort-selector {
+    layout: grid;
+    grid-size: 3;
+    height: auto;
+}
+
+.error {
+    height: 2;
+    padding: 0 1;
+}
+
+.form-buttons {
+    height: 3;
+    align-horizontal: right;
+    padding: 0 1;
+}
+
+.form-buttons Button {
+    margin: 0 0 0 1;
+}
+
+.keybar {
+    height: 1;
+    padding: 0 1;
+    color: #94a3b8;
+    background: #172033;
+}
+
+RelatedScreen {
+    padding: 0 1;
+    background: #0b1220;
+}
+
+#related-title {
+    height: 1;
+    padding: 0 1;
+    color: #7dd3fc;
+    background: #172033;
+    text-style: bold;
+}
+
+#related-table {
+    height: 1fr;
+    border: round #334155;
+    background: #0f172a;
+}
+
+#related-status {
+    height: 1;
+    padding: 0 1;
+    color: #cbd5e1;
+    background: #0f172a;
+}
+
+ConfirmScreen,
+HelpScreen,
+RelatedChoiceScreen {
+    align: center middle;
+    background: #020617;
+}
+
+.dialog {
+    width: 72;
+    height: auto;
+    max-height: 90%;
+    padding: 1 2;
+    background: #111c2e;
+    border: thick #f87171;
+}
+
+.help-dialog {
+    width: 80;
+    height: 90%;
+    border: thick #38bdf8;
+}
+
+.help-dialog .dialog-body {
+    height: 1fr;
+}
+
+.dialog-title {
+    height: 1;
+    color: #fbbf24;
+    text-style: bold;
+}
+
+.dialog-body {
+    padding: 1 0;
+}
+
+.dialog-buttons {
+    height: 3;
+    align-horizontal: right;
+}
+
+.dialog-hint {
+    height: 1;
+    color: #94a3b8;
+    text-align: center;
+}

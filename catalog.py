@@ -7,8 +7,9 @@ Data flow:
         -> sign    -> reviewed-registry.signed.json
         -> GitHub Actions -> prod branch (only the two JSON files) -> CDN
 
-Only the Python standard library is required. `sign` additionally needs an
-OpenSSL >= 3 binary (ed25519 support) on PATH.
+Core CRUD/export commands require only the Python standard library. The
+interactive TUI (`catalog-cli tui`) additionally requires Textual, declared in
+pyproject.toml. `sign` needs an OpenSSL >= 3 binary (ed25519 support) on PATH.
 """
 
 import argparse
@@ -106,7 +107,7 @@ def connect(path, init=False):
 def latest_registry(conn):
     row = conn.execute("SELECT * FROM registry ORDER BY id DESC LIMIT 1").fetchone()
     if row is None:
-        die(f"registry table is empty; run 'catalog.py init' first")
+        die("registry table is empty; run 'catalog.py init' first")
     return row
 
 
@@ -690,6 +691,33 @@ def cmd_sign(args):
 
 
 # ---------------------------------------------------------------------------
+# tui
+# ---------------------------------------------------------------------------
+
+
+def cmd_tui(args):
+    if not os.path.isfile(args.db):
+        die(f"database not found: {args.db}")
+    conn = connect(args.db)
+    try:
+        tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    finally:
+        conn.close()
+    required = {"registry", "model", "model_reasoning_effort", "provider", "provider_model"}
+    missing = sorted(required - tables)
+    if missing:
+        die(f"database is not initialized (missing tables: {', '.join(missing)}); run 'catalog.py init' first")
+    try:
+        from catalog_tui import run_tui
+
+        run_tui(args.db, args.view)
+    except ImportError as error:
+        die(f"TUI requires Textual; run 'python3 -m pip install -e .' ({error})")
+    except KeyboardInterrupt:
+        pass
+
+
+# ---------------------------------------------------------------------------
 # argument parser
 # ---------------------------------------------------------------------------
 
@@ -802,6 +830,16 @@ def build_parser():
     registry_sub = registry_parser.add_subparsers(dest="subcommand", required=True)
     registry_show = registry_sub.add_parser("show", help="show the latest registry row")
     registry_show.set_defaults(func=cmd_registry_show)
+
+    # tui ----------------------------------------------------------------
+    tui_parser = subparsers.add_parser("tui", help="open the interactive Textual UI")
+    tui_parser.add_argument(
+        "--view",
+        choices=("models", "providers", "links"),
+        default="models",
+        help="initial view (default: models)",
+    )
+    tui_parser.set_defaults(func=cmd_tui)
 
     # export / sign ------------------------------------------------------
     export_parser = subparsers.add_parser("export", help="build reviewed-registry.json from the database")

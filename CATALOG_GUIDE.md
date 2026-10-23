@@ -21,7 +21,8 @@ prod 分支（仅这两个 JSON 文件）→ CDN https://catalog.ravel.oaix.tech
 
 ## 环境要求
 
-- Python 3.10+（仅标准库）
+- Python 3.10+
+- 核心 CRUD / export 仅需标准库；TUI 需要 Textual（`pip install -e .` 会自动安装）
 - OpenSSL >= 3（仅签名需要；macOS 自带的 LibreSSL 不支持，请用 `brew install openssl@3`）
 
 ## 安装 CLI
@@ -62,11 +63,58 @@ catalog-cli link bind <provider> <model_ref> [--api-model-id <api_model_id>] \
 catalog-cli link unbind <provider> <model_id>
 
 catalog-cli registry show          # format_version / sequence / created_at
+
+catalog-cli tui                    # 交互式 TUI（默认 Models）
+catalog-cli tui --view links       # 直接打开 Links
 ```
 
 - `model set --efforts` 会**整体替换**推理强度列表，顺序即导出顺序。
 - `--input null` 表示不单独限制输入。
 - 冒烟测试请复制数据库后加 `--db`：`cp catalog.sqlite /tmp/x.sqlite && catalog-cli --db /tmp/x.sqlite ...`
+
+## 交互式 TUI
+
+`catalog-cli tui` 基于 Textual，直接读写 `catalog.sqlite`；不会自动 export / sign / bump sequence。改动后仍需提交数据库，由 CI 发布。
+
+### 键位
+
+| 键 | 列表 | 详情 | 关联 |
+|---|---|---|---|
+| `1/2/3` | Models / Providers / Links | - | - |
+| `↑/↓` | 移动当前行 | - | 移动 |
+| `→` / `←` | 详情 / 清除动作栏或勾选 | - / 返回 | - |
+| `Space` | 勾选多行 | - | 标记绑定/解绑 |
+| `Enter` | 打开动作栏或执行 | - | 应用变更 |
+| `Tab` | 切换 Delete / Bind | - | - |
+| `d` | 删除（Link 为解绑） | 删除/解绑 | 标记解绑 |
+| `e` | 编辑当前行 | 编辑 | - |
+| `m` | 关联管理 | 关联管理 | - |
+| `n` | 新增 | - | - |
+| `b` / `u` | - | - | 标记绑定 / 解绑 |
+| `r` | 刷新 | 刷新 | 刷新 |
+| `?` / `q` | 帮助 / 退出 | 帮助 / 退出 | 帮助 / 退出 |
+| `Esc` | 取消动作/勾选 | 返回 | 返回 |
+
+表单：`Tab` 下一项、`Space` 切换开关/推理强度、`Ctrl+S` 或 `F2` 保存、`Esc` 取消。
+
+### 行为约定
+
+- 删除 Model/Provider 会二次确认并提示级联删除的 efforts / 链接数量。
+- 多选后 `Enter` 打开动作栏：Model/Provider 的 Bind 批量绑定到同一个目标；Link 的 Bind 新建链接。
+- Link 列表四列：`ProviderId`、`modelId`、`协议`、`协议路径`；同一 Provider 只在组内首行显示 ProviderId，后续行留空以模拟合并。
+- TUI 列表按 id 字母序（Link 按 ProviderId、modelId）；**导出仍按 rowid**，不要在 `build_document()` 中引入显示排序。
+- 关联变更（`m`）会显示所有可关联对象；待绑定的每个目标单独确认协议/路径，最后原子提交。
+- 关联视图按 `model_ref` 去重；同一 Provider 对同一 Model 需要多个 API model id 时，用 Link 视图按 `n` 新增。
+- Model/Provider 编辑时 id 不可改；Link 编辑时 provider 不可改。修改 Link 的 API model id 使用 `UPDATE`，保留 rowid。
+- Model 的推理强度顺序会保留；TUI 不提供拖动排序，新增勾选项追加到末尾。
+
+### 测试
+
+```bash
+python3 -m unittest discover -s tests -v
+```
+
+测试使用临时数据库，不会修改仓库中的 `catalog.sqlite`。
 
 ## 数据库表结构（5 张表）
 

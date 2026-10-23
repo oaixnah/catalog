@@ -8,10 +8,17 @@ version = "0.1.0"
 description = "Ravel 自建模型/提供商目录 CLI"
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = [
+    "rich>=14.2,<16",
+    "textual>=8.2,<9",
+]
 
 [project.scripts]
 catalog-cli = "catalog:main"
 
 [tool.setuptools]
 py-modules = ["catalog"]
+packages = ["catalog_tui"]
+
+[tool.setuptools.package-data]
+catalog_tui = ["styles.tcss"]

@@ -15,3 +15,21 @@ catalog-cli --help
 ```
 
 `python3 catalog.py ...` 仍然可用，CI 也继续使用它。必须使用 `-e`（editable）：数据库、签名私钥和导出产物都在仓库根目录，CLI 默认按 `catalog.py` 所在目录定位它们。
+
+## 交互式 TUI
+
+```bash
+catalog-cli tui                          # 默认打开 Models
+catalog-cli --db /tmp/x.sqlite tui       # 在数据库副本上操作
+catalog-cli tui --view links             # 直接打开 Links
+```
+
+TUI 基于 Textual，依赖随 `pip install -e .` 安装。常用键位：
+
+- `1/2/3` 切换 Models / Providers / Links
+- `↑/↓` 移动，`→` 详情，`←` 返回/清除勾选
+- `Space` 多选，`Enter` 打开动作栏，`Tab` 切换 Delete / Bind
+- `d` 删除/解绑，`e` 编辑，`m` 关联管理，`n` 新增
+- `?` 帮助，`q` 退出
+
+TUI 改动会立即写入 `catalog.sqlite`，不会自动 export/sign；发布仍由 CI 完成。列表按字母排序，但导出的 JSON 仍按 rowid 顺序。完整键位见 [CATALOG_GUIDE.md](CATALOG_GUIDE.md)。
