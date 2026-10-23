@@ -1,17 +1,7 @@
-Screen {
-    background: #0b1220;
-    color: #e2e8f0;
-}
-
-Header {
-    background: #172033;
-    color: #e2e8f0;
-}
-
 #tab-bar {
     height: 1;
     padding: 0 1;
-    background: #172033;
+    color: $text-muted;
 }
 
 #views {
@@ -25,40 +15,33 @@ Header {
 
 .list-pane .table {
     height: 1fr;
-    border: round #334155;
-    background: #0f172a;
+    border: solid $border;
 }
 
 ActionBar {
     height: 1;
     padding: 0 1;
-    background: #172033;
 }
 
 StatusBar {
     height: 1;
     padding: 0 1;
-    color: #cbd5e1;
-    background: #0f172a;
+    color: $text-muted;
 }
 
 #keybar {
     height: 1;
     padding: 0 1;
-    color: #94a3b8;
-    background: #172033;
+    color: $text-muted;
 }
 
 DetailScreen {
     padding: 0 1;
-    background: #0b1220;
 }
 
 #detail-title {
     height: 1;
     padding: 0 1;
-    color: #7dd3fc;
-    background: #172033;
     text-style: bold;
 }
 
@@ -73,8 +56,6 @@ DetailScreen > VerticalScroll {
 .screen-title {
     height: 1;
     padding: 0 1;
-    color: #7dd3fc;
-    background: #172033;
     text-style: bold;
 }
 
@@ -93,7 +74,7 @@ DetailScreen > VerticalScroll {
 .form-label {
     height: 3;
     content-align: left middle;
-    color: #94a3b8;
+    color: $text-muted;
 }
 
 .form-grid Input,
@@ -108,7 +89,6 @@ DetailScreen > VerticalScroll {
 
 .form-section {
     height: 1;
-    color: #fbbf24;
     text-style: bold;
 }
 
@@ -125,6 +105,7 @@ EffortSelector.effort-selector {
 .error {
     height: 2;
     padding: 0 1;
+    color: $error;
 }
 
 .form-buttons {
@@ -140,41 +121,34 @@ EffortSelector.effort-selector {
 .keybar {
     height: 1;
     padding: 0 1;
-    color: #94a3b8;
-    background: #172033;
+    color: $text-muted;
 }
 
 RelatedScreen {
     padding: 0 1;
-    background: #0b1220;
 }
 
 #related-title {
     height: 1;
     padding: 0 1;
-    color: #7dd3fc;
-    background: #172033;
     text-style: bold;
 }
 
 #related-table {
     height: 1fr;
-    border: round #334155;
-    background: #0f172a;
+    border: solid $border;
 }
 
 #related-status {
     height: 1;
     padding: 0 1;
-    color: #cbd5e1;
-    background: #0f172a;
+    color: $text-muted;
 }
 
 ConfirmScreen,
 HelpScreen,
 RelatedChoiceScreen {
     align: center middle;
-    background: #020617;
 }
 
 .dialog {
@@ -182,14 +156,13 @@ RelatedChoiceScreen {
     height: auto;
     max-height: 90%;
     padding: 1 2;
-    background: #111c2e;
-    border: thick #f87171;
+    background: $surface;
+    border: solid $border;
 }
 
 .help-dialog {
     width: 80;
     height: 90%;
-    border: thick #38bdf8;
 }
 
 .help-dialog .dialog-body {
@@ -198,7 +171,6 @@ RelatedChoiceScreen {
 
 .dialog-title {
     height: 1;
-    color: #fbbf24;
     text-style: bold;
 }
 
@@ -213,6 +185,6 @@ RelatedChoiceScreen {
 
 .dialog-hint {
     height: 1;
-    color: #94a3b8;
+    color: $text-muted;
     text-align: center;
 }

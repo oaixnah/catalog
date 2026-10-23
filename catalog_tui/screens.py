@@ -189,7 +189,7 @@ class BaseFormScreen(Screen[bool]):
         raise NotImplementedError
 
     def show_error(self, message: str) -> None:
-        self.query_one("#form-error", Static).update(Text(message, style="bold #f87171"))
+        self.query_one("#form-error", Static).update(Text(message, style="bold red"))
 
     def action_save(self) -> None:
         self.query_one("#form-error", Static).update("")
@@ -540,7 +540,7 @@ class DetailScreen(Screen[None]):
             model = self._model()
             if model is None:
                 title = "MODEL NOT FOUND"
-                text.append(f"model '{self.key}' no longer exists", style="bold #f87171")
+                text.append(f"model '{self.key}' no longer exists", style="bold red")
             else:
                 title = f"MODEL DETAIL  {model.id}"
                 self._render_model(text, model)
@@ -548,7 +548,7 @@ class DetailScreen(Screen[None]):
             provider = self._provider()
             if provider is None:
                 title = "PROVIDER NOT FOUND"
-                text.append(f"provider '{self.key}' no longer exists", style="bold #f87171")
+                text.append(f"provider '{self.key}' no longer exists", style="bold red")
             else:
                 title = f"PROVIDER DETAIL  {provider.id}"
                 self._render_provider(text, provider)
@@ -556,16 +556,16 @@ class DetailScreen(Screen[None]):
             link = self._link()
             if link is None:
                 title = "LINK NOT FOUND"
-                text.append(f"link '{self.key}' no longer exists", style="bold #f87171")
+                text.append(f"link '{self.key}' no longer exists", style="bold red")
             else:
                 title = f"LINK DETAIL  {link.provider_id} -> {link.model_id}"
                 self._render_link(text, link)
         self.query_one("#detail-title", Static).update(title)
         self.query_one("#detail-body", Static).update(text)
 
-    def _line(self, text: Text, label: str, value: object, *, style: str = "#e2e8f0") -> None:
-        text.append(f"{label:<18}", style="bold #7dd3fc")
-        text.append(f"{value}\n", style=style)
+    def _line(self, text: Text, label: str, value: object) -> None:
+        text.append(f"{label:<18}", style="bold")
+        text.append(f"{value}\n")
 
     def _render_model(self, text: Text, record: data.ModelRecord) -> None:
         self._line(text, "id", record.id)
@@ -577,14 +577,13 @@ class DetailScreen(Screen[None]):
         self._line(text, "structured_output", "yes" if record.structured_output else "no")
         self._line(text, "temperature", "yes" if record.temperature else "no")
         self._line(text, "efforts", ",".join(record.efforts) or "-")
-        text.append("\nLINKED PROVIDERS\n", style="bold #fbbf24")
+        text.append("\nLINKED PROVIDERS\n", style="bold")
         links = data.fetch_model_links(self.catalog.connection, record.id)
         if not links:
-            text.append("  -\n", style="#94a3b8")
+            text.append("  -\n", style="dim")
         for link in links:
             text.append(
-                f"  {link.provider_id:<18} {link.model_id:<24} {link.protocol_type:<20} {link.request_path}\n",
-                style="#cbd5e1",
+                f"  {link.provider_id:<18} {link.model_id:<24} {link.protocol_type:<20} {link.request_path}\n"
             )
 
     def _render_provider(self, text: Text, record: data.ProviderRecord) -> None:
@@ -593,14 +592,13 @@ class DetailScreen(Screen[None]):
         self._line(text, "authentication", record.authentication)
         self._line(text, "base_url", record.base_url)
         self._line(text, "model_list_path", record.model_list_path)
-        text.append("\nLINKED MODELS\n", style="bold #fbbf24")
+        text.append("\nLINKED MODELS\n", style="bold")
         links = data.fetch_provider_links(self.catalog.connection, record.id)
         if not links:
-            text.append("  -\n", style="#94a3b8")
+            text.append("  -\n", style="dim")
         for link in links:
             text.append(
-                f"  {link.model_id:<24} ref={link.model_ref:<22} {link.protocol_type:<20} {link.request_path}\n",
-                style="#cbd5e1",
+                f"  {link.model_id:<24} ref={link.model_ref:<22} {link.protocol_type:<20} {link.request_path}\n"
             )
 
     def _render_link(self, text: Text, record: data.LinkRecord) -> None:
@@ -829,12 +827,12 @@ class RelatedScreen(Screen[None]):
     def _marker(self, record: data.RelatedRecord) -> Text:
         desired = self._desired.get(record.entity_id, record.linked)
         if desired and not record.linked:
-            return _marker("[+]", "bold #4ade80")
+            return _marker("[+]", "bold")
         if not desired and record.linked:
-            return _marker("[-]", "bold #f87171")
+            return _marker("[-]", "bold")
         if record.linked:
-            return _marker("[x]", "bold #fbbf24")
-        return _marker("[ ]", "#64748b")
+            return _marker("[x]", "bold")
+        return _marker("[ ]", "dim")
 
     def update_status(self) -> None:
         table = self.query_one("#related-table", CatalogTable)
@@ -1030,7 +1028,7 @@ class RelatedBindScreen(Screen[dict[str, str] | None]):
         return self.app  # type: ignore[return-value]
 
     def _error(self, message: str) -> None:
-        self.query_one("#form-error", Static).update(Text(message, style="bold #f87171"))
+        self.query_one("#form-error", Static).update(Text(message, style="bold red"))
 
     def action_save(self) -> None:
         api_model_id = self.query_one("#related-api-model-id", Input).value.strip()

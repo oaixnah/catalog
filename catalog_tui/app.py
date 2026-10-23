@@ -8,7 +8,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical
 from textual.screen import Screen
-from textual.widgets import ContentSwitcher, Header, Static
+from textual.widgets import ContentSwitcher, Static
 
 import catalog
 
@@ -112,7 +112,6 @@ class MainScreen(Screen[None]):
         self.active_view = initial_view
 
     def compose(self) -> ComposeResult:
-        yield Header(show_clock=True)
         yield TabBar(id="tab-bar")
         with ContentSwitcher(initial=f"{self.active_view}-pane", id="views"):
             yield ModelListPane(id="models-pane", classes="list-pane")
@@ -268,8 +267,8 @@ class EntityListPane(Vertical):
 
     def marker(self, key: str) -> Text:
         if key in self.selected:
-            return Text("[x]", style="bold #fbbf24")
-        return Text("[ ]", style="#64748b")
+            return Text("[x]", style="bold")
+        return Text("[ ]", style="dim")
 
     def refresh_data(self) -> None:
         table = self.table
@@ -618,7 +617,7 @@ class LinkListPane(EntityListPane):
     def row_cells(self, record: object) -> list[object]:
         link = record
         if link.provider_id != self._last_provider:  # type: ignore[attr-defined]
-            provider_cell: object = Text(link.provider_id, style="bold #7dd3fc")  # type: ignore[attr-defined]
+            provider_cell: object = Text(link.provider_id, style="bold")  # type: ignore[attr-defined]
             self._last_provider = link.provider_id  # type: ignore[attr-defined]
         else:
             provider_cell = ""

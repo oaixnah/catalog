@@ -51,9 +51,9 @@ class TabBar(Static):
             ("3", "links", "Links"),
         ):
             if view == active:
-                text.append(f" {key} {label} ", style="bold black on #7dd3fc")
+                text.append(f" {key} {label} ", style="reverse bold")
             else:
-                text.append(f" {key} {label} ", style="bold #94a3b8")
+                text.append(f" {key} {label} ", style="dim")
             text.append("  ")
         self.update(text)
 
@@ -62,15 +62,15 @@ class StatusBar(Static):
     def set_status(self, current: str = "", selected: int = 0, message: str = "") -> None:
         text = Text()
         if current:
-            text.append(current, style="bold #e2e8f0")
+            text.append(current, style="bold")
         if selected:
             if text:
-                text.append("  |  ", style="#475569")
-            text.append(f"selected: {selected}", style="bold #fbbf24")
+                text.append("  |  ", style="dim")
+            text.append(f"selected: {selected}", style="bold")
         if message:
             if text:
-                text.append("  |  ", style="#475569")
-            text.append(message, style="#86efac")
+                text.append("  |  ", style="dim")
+            text.append(message, style="dim")
         if not text:
             text.append(" ")
         self.update(text)
@@ -104,13 +104,13 @@ class ActionBar(Static):
         self.refresh_actions()
 
     def refresh_actions(self) -> None:
-        text = Text("ACTIONS:  ", style="bold #94a3b8")
+        text = Text("ACTIONS:  ", style="bold")
         for index, label in enumerate(self.action_labels):
             if index == self.active_action:
-                text.append(f"[ {label} ]", style="bold black on #fbbf24")
+                text.append(f"[ {label} ]", style="reverse bold")
             else:
-                text.append(f"  {label}  ", style="bold #e2e8f0")
-        text.append("    Tab switch   Enter run   Esc cancel", style="#64748b")
+                text.append(f"  {label}  ")
+        text.append("    Tab switch   Enter run   Esc cancel", style="dim")
         self.update(text)
 
 
