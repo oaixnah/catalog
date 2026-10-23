@@ -14,4 +14,6 @@ __pycache__/
 *.pyc
 .venv/
 .mypy_cache/
-.venv
+*.egg-info/
+build/
+dist/

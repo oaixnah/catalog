@@ -15,7 +15,7 @@ reviewed-registry.signed.json
 prod 分支（仅这两个 JSON 文件）→ CDN https://catalog.ravel.oaix.tech
 ```
 
-- **main**：只放 `catalog.sqlite`、`catalog.py`、文档。两个 JSON 由 `.gitignore` 忽略，**不要提交到 main**。
+- **main**：只放 `catalog.sqlite`、`catalog.py`、`pyproject.toml`、文档。两个 JSON 由 `.gitignore` 忽略，**不要提交到 main**。
 - **prod**：由 CI 自动维护的孤立分支，永远只包含 `reviewed-registry.json` 与 `reviewed-registry.signed.json`，**不要手工提交**。
 - 旧流程（编辑 JSON → 导入 SQLite）已废弃，`import_to_sqlite.py` / `import.sql` 已删除。
 
@@ -24,37 +24,49 @@ prod 分支（仅这两个 JSON 文件）→ CDN https://catalog.ravel.oaix.tech
 - Python 3.10+（仅标准库）
 - OpenSSL >= 3（仅签名需要；macOS 自带的 LibreSSL 不支持，请用 `brew install openssl@3`）
 
+## 安装 CLI
+
+在仓库根目录的虚拟环境中做一次 editable 安装：
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+python3 -m pip install -e .    # 或者 uv pip install -e .
+catalog-cli --help
+```
+
+必须使用 `-e`（editable）：`catalog.sqlite`、`catalog.pem` 与导出产物都在仓库根目录，CLI 默认按 `catalog.py` 所在目录定位它们。`catalog-cli ...` 与 `python3 catalog.py ...` 完全等价；CI 仍直接调用 `python3 catalog.py`。
+
 ## CLI 速查
 
 ```bash
-python3 catalog.py --help                 # 全部命令
-python3 catalog.py validate               # 检查外键/枚举等一致性
-python3 catalog.py init                   # 在全新文件上建表（灾难恢复用）
+catalog-cli --help                 # 全部命令
+catalog-cli validate               # 检查外键/枚举等一致性
+catalog-cli init                   # 在全新文件上建表（灾难恢复用）
 
-python3 catalog.py model list
-python3 catalog.py model show <id>
-python3 catalog.py model add --id gpt-5.6-nova --name "GPT-5.6 Nova" \
+catalog-cli model list
+catalog-cli model show <id>
+catalog-cli model add --id gpt-5.6-nova --name "GPT-5.6 Nova" \
     --context 1050000 --input 922000 --output 128000 --efforts none,low,medium,high,xhigh,max
-python3 catalog.py model set <id> --temperature --efforts low,high,max
-python3 catalog.py model rm <id>
+catalog-cli model set <id> --temperature --efforts low,high,max
+catalog-cli model rm <id>
 
-python3 catalog.py provider list
-python3 catalog.py provider add --id groq --name Groq --authentication bearer-api-key \
+catalog-cli provider list
+catalog-cli provider add --id groq --name Groq --authentication bearer-api-key \
     --base-url https://api.groq.com/openai --model-list-path /v1/models
-python3 catalog.py provider set <id> --base-url https://api.example.com
-python3 catalog.py provider rm <id>
+catalog-cli provider set <id> --base-url https://api.example.com
+catalog-cli provider rm <id>
 
-python3 catalog.py link list
-python3 catalog.py link bind <provider> <model_ref> [--api-model-id <api_model_id>] \
+catalog-cli link list
+catalog-cli link bind <provider> <model_ref> [--api-model-id <api_model_id>] \
     --protocol openai-compatible --request-path /v1/chat/completions
-python3 catalog.py link unbind <provider> <model_id>
+catalog-cli link unbind <provider> <model_id>
 
-python3 catalog.py registry show          # format_version / sequence / created_at
+catalog-cli registry show          # format_version / sequence / created_at
 ```
 
 - `model set --efforts` 会**整体替换**推理强度列表，顺序即导出顺序。
 - `--input null` 表示不单独限制输入。
-- 冒烟测试请复制数据库后加 `--db`：`cp catalog.sqlite /tmp/x.sqlite && python3 catalog.py --db /tmp/x.sqlite ...`
+- 冒烟测试请复制数据库后加 `--db`：`cp catalog.sqlite /tmp/x.sqlite && catalog-cli --db /tmp/x.sqlite ...`
 
 ## 数据库表结构（5 张表）
 

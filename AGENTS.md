@@ -2,7 +2,7 @@
 
 ## 项目概览
 
-Ravel 的自建模型/提供商目录。**`catalog.sqlite` 是唯一数据源**，由它生成 `reviewed-registry.json` 与 `reviewed-registry.signed.json`，CI 发布到 `prod` 分支（仅这两个文件）供 CDN 托管：https://catalog.ravel.oaix.tech。
+Ravel 的自建模型/提供商目录。**`catalog.sqlite` 是唯一数据源**，由它生成 `reviewed-registry.json` 与 `reviewed-registry.signed.json`，CI 发布到 `prod` 分支（仅这两个文件）供 CDN 托管：https://catalog.ravel.oaix.tech。CLI 通过 editable 安装暴露为 `catalog-cli`。
 
 ## 分支与数据流（最容易踩错）
 
@@ -10,18 +10,19 @@ Ravel 的自建模型/提供商目录。**`catalog.sqlite` 是唯一数据源**�
 catalog.sqlite → catalog.py export → reviewed-registry.json → catalog.py sign → reviewed-registry.signed.json → prod → CDN
 ```
 
-- main：只放 `catalog.sqlite` / `catalog.py` / 文档；两个 JSON 已被 `.gitignore` 忽略，**不要提交到 main**。
+- main：只放 `catalog.sqlite` / `catalog.py` / `pyproject.toml` / 文档；两个 JSON 已被 `.gitignore` 忽略，**不要提交到 main**。
 - prod：由 `.github/workflows/publish.yml` 强制推送，永远只含两个 JSON；用 `git show prod:reviewed-registry.json` 查看线上内容，**不要手工提交**；不要给 prod 开分支保护（CI 需要 force push）。
 - 旧的「编辑 JSON → 导入 SQLite」脚本已删除；不要把 JSON 当数据源改回去。
 - CI 每次发布把 `sequence` +1 并回写 `catalog.sqlite` 到 main（`[skip ci]`）：**改数据前先 `git pull`**。若 main 有分支保护，需放行 GitHub Actions 推送。
 
 ## 常用命令
 
-- CRUD：`python3 catalog.py model|provider|link list|show|add|set|rm ...`，帮助 `python3 catalog.py --help`
-- 校验：`python3 catalog.py validate`；`export` 会先校验，失败拒绝导出
-- 本地构建（不发布）：`python3 catalog.py export`，再 `python3 catalog.py sign --key catalog.pem`
-- 测试务必用 DB 副本：`cp catalog.sqlite /tmp/x.sqlite && python3 catalog.py --db /tmp/x.sqlite ...`
-- 全新 DB：`python3 catalog.py init`（建表 + 空 registry 行）
+- 安装 CLI（进入虚拟环境后，必须 editable）：`uv pip install -e .` 或 `python3 -m pip install -e .`；之后 `catalog-cli` 与 `python3 catalog.py` 等价
+- CRUD：`catalog-cli model|provider|link list|show|add|set|rm ...`，帮助 `catalog-cli --help`
+- 校验：`catalog-cli validate`；`export` 会先校验，失败拒绝导出
+- 本地构建（不发布）：`catalog-cli export`，再 `catalog-cli sign --key catalog.pem`
+- 测试务必用 DB 副本：`cp catalog.sqlite /tmp/x.sqlite && catalog-cli --db /tmp/x.sqlite ...`
+- 全新 DB：`catalog-cli init`（建表 + 空 registry 行）
 
 ## 硬性约束
 
@@ -42,9 +43,9 @@ catalog.sqlite → catalog.py export → reviewed-registry.json → catalog.py s
 无测试框架。发布前（无未发布改动、且 prod 已是同一格式版本时）本地应能复现 prod 内容：
 
 ```bash
-python3 catalog.py validate \
-  && python3 catalog.py export \
-  && python3 catalog.py sign --key catalog.pem \
+catalog-cli validate \
+  && catalog-cli export \
+  && catalog-cli sign --key catalog.pem \
   && cmp reviewed-registry.json <(git show prod:reviewed-registry.json) \
   && cmp reviewed-registry.signed.json <(git show prod:reviewed-registry.signed.json)
 ```

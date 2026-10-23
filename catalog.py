@@ -696,7 +696,6 @@ def cmd_sign(args):
 
 def build_parser():
     parser = argparse.ArgumentParser(
-        prog="catalog.py",
         description="Manage catalog.sqlite and build the reviewed-registry artifacts.",
     )
     parser.add_argument("--db", default=DEFAULT_DB, help=f"SQLite database path (default: {DEFAULT_DB})")
