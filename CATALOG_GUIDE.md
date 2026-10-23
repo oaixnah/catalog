@@ -4,7 +4,7 @@
 
 ```
 catalog.sqlite（数据源，main 分支）
-    │  python3 catalog.py export [--bump-sequence]
+    │  python3 catalog.py export [--sequence N]
     ▼
 reviewed-registry.json
     │  python3 catalog.py sign --key catalog.pem
@@ -68,7 +68,7 @@ catalog-cli link bind <provider> <model_ref> [--api-model-id <api_model_id>] \
     --protocol openai-compatible --request-path /v1/chat/completions
 catalog-cli link unbind <provider> <model_id>
 
-catalog-cli registry show          # format_version / sequence / created_at
+catalog-cli registry show          # format_version / sequence（本地兜底）/ created_at
 
 catalog-cli tui                    # 交互式 TUI（默认 Models）
 catalog-cli tui --view links       # 直接打开 Links
@@ -81,7 +81,7 @@ catalog-cli tui --view links       # 直接打开 Links
 
 ## 交互式 TUI
 
-`catalog-cli tui` 基于 Textual，直接读写 `catalog.sqlite`；不会自动 export / sign / bump sequence。改动后仍需提交数据库，由 CI 发布。
+`catalog-cli tui` 基于 Textual，直接读写 `catalog.sqlite`；不会自动 export / sign；发布 sequence 由 CI 根据 prod 计算。改动后仍需提交数据库，由 CI 发布。
 
 ### 键位
 
@@ -153,7 +153,7 @@ logo/<providerId>_dark.svg   # 深色版本，所有 <path> 的 fill 为 #CED0D6
 ## 数据库表结构（5 张表）
 
 ```
-registry                          -- 注册表元信息（format_version / sequence）
+registry                          -- 注册表元信息（format_version / sequence；sequence 仅本地兜底）
     │
 model                             -- 模型定义
     ├── model_reasoning_effort     -- 推理强度（一对多，sort_order 决定导出顺序）
@@ -210,7 +210,7 @@ provider                          -- 提供商
 
 ## 导出结构（reviewed-registry.json v2）
 
-- 顶层：`formatVersion`（当前 2）、`sequence`、`models`、`providers`。
+- 顶层：`formatVersion`（当前 2）、`sequence`、`models`、`providers`。发布时 `sequence` 以 prod 当前值为基准；本地 DB 中的值仅作默认值。
 - `models` 段：`reviewed-models-v1` schema（`schemaVersion` = 1），本次 v2 未改动。
 - `providers` 段：`reviewed-providers-v2` schema（`schemaVersion` = 2）：
   - provider：`{id, displayName, baseUrl, modelList: {path, authentication}, models}`。
@@ -219,25 +219,29 @@ provider                          -- 提供商
 
 ## 本地构建（不发布）
 
+`export` 默认使用 DB 里的 `sequence`；要逐字节复现 prod，需要显式传入 prod 当前的 `sequence`：
+
 ```bash
-python3 catalog.py export                       # 生成 reviewed-registry.json
-python3 catalog.py sign --key catalog.pem       # 生成 reviewed-registry.signed.json
-cmp reviewed-registry.json <(git show prod:reviewed-registry.json)         # 与 CDN 内容对拍
-cmp reviewed-registry.signed.json <(git show prod:reviewed-registry.signed.json)
+git fetch origin prod
+SEQUENCE=$(git show origin/prod:reviewed-registry.json | python3 -c 'import json,sys; print(json.load(sys.stdin)["sequence"])')
+python3 catalog.py export --sequence "$SEQUENCE"   # 生成 reviewed-registry.json
+python3 catalog.py sign --key catalog.pem          # 生成 reviewed-registry.signed.json
+cmp reviewed-registry.json <(git show origin/prod:reviewed-registry.json)         # 与 CDN 内容对拍
+cmp reviewed-registry.signed.json <(git show origin/prod:reviewed-registry.signed.json)
 ```
 
 ## 发布流程（GitHub Actions）
 
 推送到 main 且 `catalog.sqlite` 或 `logo/**` 有变化时，`.github/workflows/publish.yml` 自动：
 
-1. 仅当 `catalog.sqlite` 变化时 `export --bump-sequence`（自增 sequence），否则普通 export
-2. 用仓库 Secret `CATALOG_SIGNING_KEY` 签名（PKCS8 ed25519 PEM，明文或 base64 均可）
-3. 把自增后的 `catalog.sqlite` 以 `[skip ci]` 提交回 main（未 bump 时不会产生提交）
+1. 读取 `origin/prod` 当前的 `sequence`：导出内容与 prod 相同则复用，不同则 +1（prod 不存在时以 DB 值 +1 兜底）
+2. 以该 sequence 执行 `catalog.py export --sequence`
+3. 用仓库 Secret `CATALOG_SIGNING_KEY` 签名（PKCS8 ed25519 PEM，明文或 base64 均可）
 4. force push 到 prod 分支（两个 JSON + `logo/`）
 
-也可在 Actions 页手动 `workflow_dispatch`，可选择不 bump sequence（密钥轮换后重签）。
+CI **不再回写 main**。也可在 Actions 页手动 `workflow_dispatch`：默认强制执行一次 sequence bump；密钥轮换重签时可选择不强制 bump，内容未变时复用原 sequence。
 
-发布前请先 `git pull`，确保本地 `catalog.sqlite` 包含 CI 回写的 sequence。
+CI 不再修改 `catalog.sqlite`，因此改数据前无需先 `git pull`；推送前按常规同步远端即可。
 
 ## 签名格式（改动会破坏 CDN 客户端校验）
 

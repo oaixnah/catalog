@@ -407,7 +407,7 @@ def collect_problems(conn):
 # ---------------------------------------------------------------------------
 
 
-def build_document(conn):
+def build_document(conn, sequence=None):
     registry = latest_registry(conn)
 
     models = []
@@ -468,7 +468,7 @@ def build_document(conn):
 
     return {
         "formatVersion": registry["format_version"],
-        "sequence": registry["sequence"],
+        "sequence": registry["sequence"] if sequence is None else sequence,
         "models": {
             "$schema": MODELS_SCHEMA,
             "schemaVersion": MODELS_SCHEMA_VERSION,
@@ -918,18 +918,18 @@ def cmd_validate(args):
 
 def cmd_export(args):
     conn = connect(args.db)
-    problems = collect_problems(conn)
-    if problems:
-        print("refusing to export, run 'validate' for details:", file=sys.stderr)
-        for problem in problems:
-            print(f"  - {problem}", file=sys.stderr)
-        sys.exit(1)
-    if args.bump_sequence:
-        conn.execute(
-            "UPDATE registry SET sequence = sequence + 1 WHERE id = (SELECT id FROM registry ORDER BY id DESC LIMIT 1)"
-        )
-        conn.commit()
-    document = build_document(conn)
+    try:
+        problems = collect_problems(conn)
+        if problems:
+            print("refusing to export, run 'validate' for details:", file=sys.stderr)
+            for problem in problems:
+                print(f"  - {problem}", file=sys.stderr)
+            sys.exit(1)
+        if args.sequence is not None and args.sequence < 0:
+            die("--sequence must be >= 0")
+        document = build_document(conn, sequence=args.sequence)
+    finally:
+        conn.close()
     write_text(args.out, render_document(document))
     print(
         f"exported {args.out} (sequence={document['sequence']}, "
@@ -1176,7 +1176,11 @@ def build_parser():
     # export / sign ------------------------------------------------------
     export_parser = subparsers.add_parser("export", help="build reviewed-registry.json from the database")
     export_parser.add_argument("--out", default=DEFAULT_REGISTRY)
-    export_parser.add_argument("--bump-sequence", action="store_true", help="increment registry.sequence before export")
+    export_parser.add_argument(
+        "--sequence",
+        type=int,
+        help="override the exported sequence without modifying the database",
+    )
     export_parser.set_defaults(func=cmd_export)
 
     sign_parser = subparsers.add_parser("sign", help="build reviewed-registry.signed.json (ed25519 via OpenSSL)")

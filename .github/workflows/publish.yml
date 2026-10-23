@@ -1,10 +1,10 @@
 name: publish-catalog
 
 # catalog.sqlite is the source of truth on main. This workflow:
-#   1. bumps registry.sequence (only when catalog.sqlite changed) and exports reviewed-registry.json
+#   1. computes the next sequence from prod (bumps only when the exported content changed, unless forced) and exports reviewed-registry.json
 #   2. signs it (ed25519) into reviewed-registry.signed.json
-#   3. commits the bumped catalog.sqlite back to main with [skip ci]
-#   4. force-pushes a prod branch that contains the two JSON files plus logo/ (CDN origin)
+#   3. force-pushes a prod branch that contains the two JSON files plus logo/ (CDN origin)
+# It never writes back to main.
 #
 # Required repository secret: CATALOG_SIGNING_KEY (PKCS8 ed25519 PEM, raw or base64).
 
@@ -17,7 +17,7 @@ on:
   workflow_dispatch:
     inputs:
       bump_sequence:
-        description: Increment registry.sequence before export
+        description: Force a sequence bump even if the registry content is unchanged
         type: boolean
         default: true
 
@@ -43,29 +43,55 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - name: Export reviewed-registry.json
+      - name: Compute next sequence
         env:
           EVENT_NAME: ${{ github.event_name }}
-          BEFORE_SHA: ${{ github.event.before }}
-          AFTER_SHA: ${{ github.sha }}
           INPUT_BUMP: ${{ inputs.bump_sequence }}
         run: |
-          BUMP=true
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            if [ "$INPUT_BUMP" != "true" ]; then
-              BUMP=false
-            fi
-          elif [ -n "$BEFORE_SHA" ] && [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ]; then
-            if git cat-file -e "$BEFORE_SHA^{commit}" 2>/dev/null \
-              && git diff --quiet "$BEFORE_SHA" "$AFTER_SHA" -- catalog.sqlite; then
-              BUMP=false
-            fi
+          set -euo pipefail
+
+          FORCE_BUMP=false
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$INPUT_BUMP" = "true" ]; then
+            FORCE_BUMP=true
           fi
-          if [ "$BUMP" = "true" ]; then
-            python3 catalog.py export --bump-sequence
+
+          set +e
+          git ls-remote --exit-code --heads origin prod >/dev/null
+          PROD_STATUS=$?
+          set -e
+
+          if [ "$PROD_STATUS" -eq 0 ]; then
+            git fetch --no-tags origin +refs/heads/prod:refs/remotes/origin/prod
+            if ! git cat-file -e origin/prod:reviewed-registry.json 2>/dev/null; then
+              echo "::error::origin/prod exists but reviewed-registry.json is missing"
+              exit 1
+            fi
+            git show origin/prod:reviewed-registry.json > "$RUNNER_TEMP/prod-registry.json"
+            BASE=$(python3 -c 'import json,pathlib,sys; print(int(json.loads(pathlib.Path(sys.argv[1]).read_text())["sequence"]))' "$RUNNER_TEMP/prod-registry.json")
+            python3 catalog.py export --sequence "$BASE" --out "$RUNNER_TEMP/candidate-registry.json"
+            if [ "$FORCE_BUMP" = "true" ] || ! cmp -s "$RUNNER_TEMP/candidate-registry.json" "$RUNNER_TEMP/prod-registry.json"; then
+              BUMP=true
+            else
+              BUMP=false
+            fi
+          elif [ "$PROD_STATUS" -eq 2 ]; then
+            BASE=$(python3 -c "import catalog; c=catalog.connect('catalog.sqlite'); print(int(catalog.latest_registry(c)['sequence']))")
+            BUMP=true
           else
-            python3 catalog.py export
+            echo "::error::failed to query origin/prod (git ls-remote exit $PROD_STATUS)"
+            exit "$PROD_STATUS"
           fi
+
+          if [ "$BUMP" = "true" ]; then
+            NEXT=$((BASE + 1))
+          else
+            NEXT=$BASE
+          fi
+          echo "sequence base=$BASE bump=$BUMP next=$NEXT"
+          echo "NEXT_SEQUENCE=$NEXT" >> "$GITHUB_ENV"
+
+      - name: Export reviewed-registry.json
+        run: python3 catalog.py export --sequence "$NEXT_SEQUENCE"
 
       - name: Sign reviewed-registry.signed.json
         env:
@@ -84,16 +110,6 @@ jobs:
           chmod 600 "$KEY_FILE"
           python3 catalog.py sign --key "$KEY_FILE"
           rm -f "$KEY_FILE"
-
-      - name: Commit sequence bump back to main
-        run: |
-          if git diff --quiet -- catalog.sqlite; then
-            echo "catalog.sqlite unchanged (sequence not bumped)"
-          else
-            git add catalog.sqlite
-            git commit -m "chore: bump registry sequence [skip ci]"
-            git push origin HEAD:main
-          fi
 
       - name: Publish the registry and logos to the prod branch
         run: |
