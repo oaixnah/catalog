@@ -94,6 +94,7 @@ class CatalogApp(App[None]):
 
 
 class MainScreen(Screen[None]):
+    VIEW_ORDER = ("models", "providers", "links")
     BINDINGS = [
         Binding("1", "show_models", "Models", priority=True, show=False),
         Binding("2", "show_providers", "Providers", priority=True, show=False),
@@ -102,7 +103,8 @@ class MainScreen(Screen[None]):
         Binding("left", "pane_back", "Back", priority=True, show=False),
         Binding("space", "pane_select", "Select", priority=True, show=False),
         Binding("enter", "pane_action", "Actions", priority=True, show=False),
-        Binding("tab", "pane_tab", "Switch action", priority=True, show=False),
+        Binding("tab", "pane_tab", "View / action", priority=True, show=False),
+        Binding("shift+tab", "pane_shift_tab", "Previous view", priority=True, show=False),
         Binding("escape", "pane_escape", "Cancel", priority=True, show=False),
         Binding("d", "pane_delete", "Delete", priority=True, show=False),
         Binding("e", "pane_edit", "Edit", priority=True, show=False),
@@ -139,12 +141,14 @@ class MainScreen(Screen[None]):
         if self.active_view == "links":
             text = (
                 "up/down move   right detail   left clear   space select   enter actions   "
-                "d unbind   e edit   m related   n new link   r refresh   1/2/3 view   ? help   q quit"
+                "d unbind   e edit   m related   n new link   r refresh   "
+                "tab/shift+tab/1/2/3 view   ? help   q quit"
             )
         else:
             text = (
                 "up/down move   right detail   left clear   space select   enter actions   "
-                "d delete   e edit   m related   n new   r refresh   1/2/3 view   ? help   q quit"
+                "d delete   e edit   m related   n new   r refresh   "
+                "tab/shift+tab/1/2/3 view   ? help   q quit"
             )
         self.query_one("#keybar", Static).update(text)
 
@@ -180,8 +184,22 @@ class MainScreen(Screen[None]):
     def action_pane_action(self) -> None:
         self.current_pane().enter_action()
 
+    def _cycle_view(self, step: int) -> None:
+        index = self.VIEW_ORDER.index(self.active_view)
+        self._show_view(self.VIEW_ORDER[(index + step) % len(self.VIEW_ORDER)])
+
+    def _handle_view_tab(self, step: int) -> None:
+        pane = self.current_pane()
+        if pane.action_bar.actions_visible:
+            pane.switch_action()
+            return
+        self._cycle_view(step)
+
     def action_pane_tab(self) -> None:
-        self.current_pane().switch_action()
+        self._handle_view_tab(1)
+
+    def action_pane_shift_tab(self) -> None:
+        self._handle_view_tab(-1)
 
     def action_pane_escape(self) -> None:
         self.current_pane().back()

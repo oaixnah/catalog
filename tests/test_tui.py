@@ -354,6 +354,32 @@ class UiTests(unittest.IsolatedAsyncioTestCase):
             await pilot.pause()
             self.assertEqual(type(self.app.screen).__name__, "HelpScreen")
 
+    async def test_tab_cycles_views(self) -> None:
+        self.app = CatalogApp(self.db_path)
+        async with self.app.run_test(size=(140, 45)) as pilot:
+            await pilot.pause()
+            self.assertIsInstance(self.app.screen, MainScreen)
+            assert isinstance(self.app.screen, MainScreen)
+            self.assertEqual(self.app.screen.active_view, "models")
+
+            for expected in ("providers", "links", "models"):
+                await pilot.press("tab")
+                await pilot.pause()
+                self.assertEqual(self.app.screen.active_view, expected)
+                self.assertEqual(
+                    self.app.screen.query_one("#views").current, f"{expected}-pane"
+                )
+                self.assertIs(self.app.focused, self.app.screen.current_pane().table)
+
+            for expected in ("links", "providers", "models"):
+                await pilot.press("shift+tab")
+                await pilot.pause()
+                self.assertEqual(self.app.screen.active_view, expected)
+                self.assertEqual(
+                    self.app.screen.query_one("#views").current, f"{expected}-pane"
+                )
+                self.assertIs(self.app.focused, self.app.screen.current_pane().table)
+
     async def test_action_bar_and_delete_confirmation(self) -> None:
         self.app = CatalogApp(self.db_path)
         async with self.app.run_test(size=(140, 45)) as pilot:
@@ -377,6 +403,11 @@ class UiTests(unittest.IsolatedAsyncioTestCase):
             await pilot.press("tab")
             await pilot.pause()
             self.assertEqual(bar.active_action, 1)
+            self.assertEqual(self.app.screen.active_view, "models")
+            await pilot.press("shift+tab")
+            await pilot.pause()
+            self.assertEqual(bar.active_action, 0)
+            self.assertEqual(self.app.screen.active_view, "models")
             await pilot.press("escape")
             await pilot.pause()
             self.assertFalse(bar.actions_visible)

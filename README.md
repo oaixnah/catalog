@@ -39,9 +39,9 @@ catalog-cli tui --view links             # 直接打开 Links
 
 TUI 基于 Textual，依赖随 `pip install -e .` 安装。常用键位：
 
-- `1/2/3` 切换 Models / Providers / Links
+- `1/2/3` 切换 Models / Providers / Links，`Tab` / `Shift+Tab` 正向/反向循环切换视图
 - `↑/↓` 移动，`→` 详情，`←` 返回/清除勾选
-- `Space` 多选，`Enter` 打开动作栏，`Tab` 切换 Delete / Bind
+- `Space` 多选，`Enter` 打开动作栏；动作栏打开时 `Tab` / `Shift+Tab` 切换 Delete / Bind
 - `d` 删除/解绑，`e` 编辑，`m` 关联管理，`n` 新增
 - `?` 帮助，`q` 退出
 
